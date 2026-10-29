@@ -148,6 +148,64 @@ def checked(command,label):
         raise RuntimeError(label+': '+(result.stderr.strip() or result.stdout.strip() or 'command failed'))
     return result
 
+def cursor_refresh_target(monitors, pos):
+    """Choose a point on another display, as close as possible to current position."""
+    x,y=pos
+    rectangles=[]
+    for monitor in monitors:
+        try:
+            mx,my=int(monitor['x']),int(monitor['y'])
+            w,h=int(monitor['width']),int(monitor['height'])
+        except (TypeError,ValueError,KeyError):
+            continue
+        if w<16 or h<16:
+            continue
+        rectangles.append((mx,my,w,h))
+    if len(rectangles)<2:
+        return None
+    # Only do this when the current pointer position can be mapped safely
+    # to an output. Avoid a warp on ambiguous / mirrored monitor geometry.
+    on=[r for r in rectangles if r[0]<=x<r[0]+r[2] and r[1]<=y<r[1]+r[3]]
+    if len(on)!=1:
+        return None
+    alternatives=[]
+    for mx,my,w,h in rectangles:
+        if (mx,my,w,h)==on[0]:
+            continue
+        tx=max(mx+5,min(mx+w-6,x))
+        ty=max(my+5,min(my+h-6,y))
+        if (tx,ty)!=(x,y):
+            alternatives.append((abs(tx-x)+abs(ty-y),(tx,ty)))
+    return min(alternatives)[1] if alternatives else None
+
+def refresh_cursor_across_outputs():
+    """Re-enter a different monitor, then restore the pointer location.
+
+    Hyprland 0.56 can keep a client-owned cursor surface until a monitor
+    boundary triggers a cursor refresh. This technique mirrors a manual move
+    between screens, only when a second output is confirmed. It is best-effort
+    and never changes the saved cursor setting.
+    """
+    try:
+        monitors=json.loads(checked(['hyprctl','-j','monitors'],'Monitor list').stdout)
+        position=json.loads(checked(['hyprctl','-j','cursorpos'],'Pointer position').stdout)
+        x,y=int(round(float(position['x']))),int(round(float(position['y'])))
+        target=cursor_refresh_target(monitors,(x,y))
+        if target is None:
+            return False
+        # Warp once to the other monitor. Always restore in finally, even if
+        # the hop fails; do not strand the mouse on the other display.
+        try:
+            first=run(['hyprctl','dispatch','movecursor',f'{target[0]} {target[1]}'])
+            if first.returncode:
+                return False
+            time.sleep(0.06)
+        finally:
+            run(['hyprctl','dispatch','movecursor',f'{x} {y}'])
+        return True
+    except (OSError,ValueError,KeyError,TypeError,subprocess.TimeoutExpired,RuntimeError):
+        return False
+
 def apply(data):
     size=max(16,min(128,int(data['size'])))
     follow=bool(data['follow_theme'])
@@ -162,8 +220,9 @@ def apply(data):
     if shutil.which('gsettings'):
         checked(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme],'GTK cursor theme')
         checked(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)],'GTK cursor size')
+    refreshed=refresh_cursor_across_outputs()
     write_settings(data)
-    return theme
+    return theme,refreshed
 
 def overlay_running():
     """Check that the Quickshell service actually started its cursor bridge."""
@@ -304,8 +363,8 @@ def gui():
             return False
         def worker():
             try:
-                theme=apply(options)
-                message='Applied '+theme+' at '+str(options['size'])+' px. Shake overlay: '+(
+                theme,refreshed=apply(options)
+                message='Applied '+theme+' at '+str(options['size'])+' px. '+('Cursor refreshed across displays. ' if refreshed else '')+'Shake overlay: '+(
                          'enabled' if options['shake'] else 'disabled')+'.'
                 if not PLUGIN_DIR.exists():
                     message+=' Shake overlay is not installed; run the updated installer.'
