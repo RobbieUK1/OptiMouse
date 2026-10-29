@@ -12,7 +12,7 @@ PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
 BRIDGE_PID=HOME/'.local/state/optimouse/bridge.pid'
-APP_VERSION='0.2.2'
+APP_VERSION='0.2.3'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
@@ -48,6 +48,10 @@ def tint_xcursor(raw, rgb):
     _,_,n=struct.unpack_from('<III',data,4)
     if n>10000: return raw
     tr,tg,tb=rgb
+    # Cursor artwork reuses a small palette of opaque/antialiased RGB values.
+    # Cache each recolour once instead of recalculating luminance and mixing
+    # three channels for every pixel in every animation frame.
+    palette={}
     for i in range(n):
         off=16+i*12
         if off+12>len(data): break
@@ -58,13 +62,19 @@ def tint_xcursor(raw, rgb):
         start=pos+header
         if header<36 or start+width*height*4>len(data): continue
         for j in range(start,start+width*height*4,4):
-            b,g,r,a=data[j:j+4]
-            if a==0: continue
-            lum=(int(r)*299+int(g)*587+int(b)*114)//1000
-            w=min(1,max(0,(lum-35))/220)
-            data[j]=round(b*(1-w)+tb*w)
-            data[j+1]=round(g*(1-w)+tg*w)
-            data[j+2]=round(r*(1-w)+tr*w)
+            if data[j+3]==0:
+                continue
+            b,g,r=data[j],data[j+1],data[j+2]
+            key=(b,g,r)
+            tinted=palette.get(key)
+            if tinted is None:
+                lum=(r*299+g*587+b*114)//1000
+                w=min(1,max(0,(lum-35))/220)
+                tinted=(round(b*(1-w)+tb*w),
+                        round(g*(1-w)+tg*w),
+                        round(r*(1-w)+tr*w))
+                palette[key]=tinted
+            data[j],data[j+1],data[j+2]=tinted
     return bytes(data)
 
 def source_signature(source):
