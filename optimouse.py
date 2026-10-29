@@ -154,18 +154,18 @@ def apply(data):
     theme=desktop_theme() if follow else create_theme(data['color'])
     if not shutil.which('hyprctl'):
         raise RuntimeError('hyprctl is unavailable')
-    # Omarchy's own toggle directory is sourced across Hyprland reloads.
+    # Save the toggle for future Omarchy reloads, but do not force a live
+    # compositor reload for every colour change. setcursor applies the cursor
+    # immediately; reloading then repeating setcursor adds avoidable latency.
     persist_cursor(theme,size,follow)
     checked(['hyprctl','setcursor',theme,str(size)],'Cursor apply')
-    checked(['hyprctl','reload'],'Hyprland reload')
-    checked(['hyprctl','setcursor',theme,str(size)],'Cursor refresh')
     if shutil.which('gsettings'):
         checked(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme],'GTK cursor theme')
         checked(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)],'GTK cursor size')
     # Preview is the one confirmed refresh path on this Hyprland build:
     # the Quickshell overlay maps, hides the compositor pointer and restores
     # it at the end. Request that exact existing Preview sequence after
-    # setcursor/reload/gsettings have completed, instead of issuing separate
+    # setcursor/gsettings have completed, instead of issuing separate
     # hyprctl eval or moving the pointer between monitors.
     if overlay_running():
         write_settings({**data, 'preview_token':str(time.time_ns())})
