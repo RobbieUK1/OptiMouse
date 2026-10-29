@@ -327,7 +327,10 @@ Item {
   // Safeguard against missed filesystem watcher events (including atomic
   // rename updates). This reads only a tiny user settings file.
   Timer {
-    interval: 500
+    // A filesystem watcher may miss atomic-replace writes on some setups.
+    // Poll the tiny settings JSON at 100ms as a fallback so Apply/Preview
+    // requests are noticed promptly; unchanged payloads are deduplicated.
+    interval: 100
     repeat: true
     running: true
     onTriggered: settingsFile.reload()
