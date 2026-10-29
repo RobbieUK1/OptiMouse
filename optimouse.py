@@ -377,7 +377,8 @@ def gui():
     Gtk.main()
 
 if __name__=='__main__':
-    if len(sys.argv)>1 and sys.argv[1]=='--diagnose': diagnostics()
+    if len(sys.argv)>1 and sys.argv[1]=='--version': print('OptiMouse',APP_VERSION)
+    elif len(sys.argv)>1 and sys.argv[1]=='--diagnose': diagnostics()
     elif len(sys.argv)>1 and sys.argv[1]=='--apply':
         print('Applied cursor theme:',apply(read_settings()))
     else: gui()
