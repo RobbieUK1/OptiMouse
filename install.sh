@@ -6,7 +6,7 @@ if ! command -v python3 >/dev/null || ! python3 -c 'import gi; gi.require_versio
   sudo pacman -S --needed python python-gobject gtk3
 fi
 mkdir -p "$HOME/.local/share/optimouse" "$HOME/.local/share/applications" "$HOME/.config/systemd/user" "$HOME/.config/hypr"
-if [[ -f "${BASH_SOURCE[0]}" && "${BASH_SOURCE[0]}" != /dev/fd/* && -f "$(dirname "${BASH_SOURCE[0]}")/optimouse.py" ]]; then
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" && -f "$(dirname "${BASH_SOURCE[0]}")/optimouse.py" ]]; then
   install -m755 "$(dirname "${BASH_SOURCE[0]}")/optimouse.py" "$HOME/.local/share/optimouse/optimouse.py"
 else
   curl --fail --location --show-error --silent "$BASE/optimouse.py" -o "$HOME/.local/share/optimouse/optimouse.py"
