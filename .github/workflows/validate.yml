@@ -13,7 +13,7 @@ jobs:
         run: python3 -m py_compile optimouse.py cursor_resizer.py plugin/cursor-bridge.py
       - name: Verify application version and standalone timing label
         run: |
-          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.7'
+          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.8'
           python3 - <<'PY'
           from pathlib import Path
           source=Path('optimouse.py').read_text()
@@ -30,7 +30,8 @@ jobs:
           assert "sync_gtk_cursor_settings(theme,size)" in source
           assert "prepare_cursor_choice(options)" in source
           assert "size.connect('value-changed',queue_colour_preload)" in source
-          assert "from cursor_resizer import sized_theme" in source
+          assert "from cursor_resizer import sized_theme, cursor_visible_height" in source
+          assert "drawn=cursor_visible_height(_theme,options['size'],ICONS)" in source
           # The previous self-managed Gtk.ColorButton popup could appear in
           # the screen's top-left on Hyprland. A transient modal dialog must
           # belong to the settings window and keep Cancel non-destructive.
