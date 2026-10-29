@@ -535,12 +535,15 @@ def gui():
         sensitivity.set_active(1)
         colour_state['rgba'].parse(DEFAULT['color'])
         swatch.queue_draw()
+        queue_colour_preload()
         status.set_text('Defaults selected. Press Apply settings to save.')
 
     apply_btn.connect('clicked',apply_clicked)
     preview.connect('clicked',preview_clicked)
     reset.connect('clicked',reset_clicked)
     win.show_all()
+    # Warm the existing custom selection without changing the live pointer.
+    queue_colour_preload()
     Gtk.main()
 
 if __name__=='__main__':
