@@ -154,6 +154,13 @@ def apply(data, persist=True):
     if data['shake'] and persist and not data['follow_theme']:
         create_theme(data['color'],min(256,round(size*float(data.get('shake_scale',2.2)))))
     if shutil.which('systemctl') and persist:
+        # Make the Hyprland socket available to the user service even when
+        # the systemd user manager started before the graphical session.
+        names=[name for name in ('HYPRLAND_INSTANCE_SIGNATURE','WAYLAND_DISPLAY','XDG_RUNTIME_DIR') if os.environ.get(name)]
+        if names:
+            env_result=run(['systemctl','--user','import-environment',*names])
+            if env_result.returncode:
+                raise RuntimeError('Cannot pass Hyprland session to shake helper: '+env_result.stderr.strip())
         service=run(['systemctl','--user','enable','--now','optimouse-shake.service']) if data['shake'] else run(['systemctl','--user','disable','--now','optimouse-shake.service'])
         if service.returncode:
             raise RuntimeError('Shake helper: '+service.stderr.strip())
