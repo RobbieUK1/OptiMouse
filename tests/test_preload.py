@@ -48,7 +48,7 @@ class PreparationTests(unittest.TestCase):
 
     def test_apply_uses_prepare_function_for_custom_colours(self):
         opts={**app.DEFAULT,"follow_theme":False,"color":"#123456","size":52}
-        with patch.object(app,"prepare_custom_theme",return_value="OptiMouse-123456") as prepare, \
+        with patch.object(app,"prepare_cursor_choice",return_value=("OptiMouse-Sized-OptiMouse-123456-52",True)) as prepare, \
              patch.object(app,"persist_cursor"), \
              patch.object(app,"checked"), \
              patch.object(app,"overlay_running",return_value=False), \
@@ -56,9 +56,10 @@ class PreparationTests(unittest.TestCase):
              patch.object(app,"sync_gtk_cursor_settings"), \
              patch.object(app.shutil,"which",return_value="/bin/tool"):
             theme,preview,timings=app.apply(opts)
-        self.assertEqual(theme,"OptiMouse-123456")
+        self.assertEqual(theme,"OptiMouse-Sized-OptiMouse-123456-52")
         self.assertFalse(preview)
-        prepare.assert_called_once_with("#123456")
+        prepare.assert_called_once_with(opts)
+        self.assertEqual(timings['resized'],1.0)
         self.assertIn("theme",timings)
 
 if __name__=="__main__":
