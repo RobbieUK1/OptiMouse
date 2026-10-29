@@ -10,7 +10,6 @@ ICONS=HOME/'.local/share/icons'
 HYPR=HOME/'.config/hypr'
 PERSIST=HYPR/'optimouse.conf'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2}
-ORIGINAL=CONFIG/'original-theme.json'
 
 def run(args, **kwargs):
     return subprocess.run(args, capture_output=True, text=True, timeout=8, **kwargs)
@@ -30,111 +29,65 @@ def base_theme():
             if p.is_dir() and any(p.iterdir()): return p
     raise RuntimeError('No system XCursor theme found. Install adwaita-cursors.')
 
-def render_xcursor(raw, rgb, requested_size):
-    """Build an XCursor containing actual raster frames at requested_size."""
-    if len(raw)<16 or raw[:4]!=b'Xcur':
-        return raw
-    header, version, count=struct.unpack_from('<III',raw,4)
-    if header<16 or count>4096 or header+count*12>len(raw):
-        return raw
-    images=[]
-    for i in range(count):
-        typ, subtype, pos=struct.unpack_from('<III',raw,header+i*12)
-        if typ!=0xfffd0002 or pos+36>len(raw):
-            continue
-        h,t,sub,ver,w,ht,xhot,yhot,delay=struct.unpack_from('<IIIIIIIII',raw,pos)
-        if t!=typ or h<36 or not w or not ht or w*ht>2_000_000:
-            continue
-        start=pos+h
-        if start+w*ht*4>len(raw):
-            continue
-        images.append((sub,w,ht,xhot,yhot,delay,raw[start:start+w*ht*4]))
-    if not images:
-        return raw
-    # Select a single native-size animation group, then resample its frames.
-    source_size=min({v[0] for v in images},key=lambda n:abs(n-32))
-    selected=[v for v in images if v[0]==source_size]
-    output=bytearray(b'Xcur'+struct.pack('<III',16,0x10000,len(selected)))
-    offset=16+len(selected)*12
-    chunks=[]
-    for _,w,h,xhot,yhot,delay,pixels in selected:
-        scale=requested_size/max(w,h)
-        nw=max(1,round(w*scale)); nh=max(1,round(h*scale))
-        nw=min(nw,512);nh=min(nh,512)
-        out=bytearray(nw*nh*4)
-        tr,tg,tb=rgb
-        for y in range(nh):
-            sy=min(h-1,int(y*h/nh))
-            for x in range(nw):
-                sx=min(w-1,int(x*w/nw))
-                idx=(sy*w+sx)*4
-                b0,g0,r0,alpha=pixels[idx:idx+4]
-                # Preserve opaque black contours/shadows, tint pale body pixels.
-                lum=(r0*299+g0*587+b0*114)//1000
-                factor=max(0,min(1,(lum-35)/220))
-                j=(y*nw+x)*4
-                out[j]=round(b0*(1-factor)+tb*factor)
-                out[j+1]=round(g0*(1-factor)+tg*factor)
-                out[j+2]=round(r0*(1-factor)+tr*factor)
-                out[j+3]=alpha
-        chunk=struct.pack('<IIIIIIIII',36,0xfffd0002,requested_size,1,nw,nh,
-                          min(nw-1,round(xhot*nw/w)),min(nh-1,round(yhot*nh/h)),delay)+out
-        output.extend(struct.pack('<III',0xfffd0002,requested_size,offset))
-        chunks.append(chunk);offset+=len(chunk)
-    return bytes(output)+b''.join(chunks)
+def tint_xcursor(raw, rgb):
+    """Recolour light cursor pixels while retaining shadows, antialiasing and animations."""
+    data=bytearray(raw)
+    if len(data)<16 or data[:4]!=b'Xcur': return raw
+    _,_,n=struct.unpack_from('<III',data,4)
+    if n>10000: return raw
+    tr,tg,tb=rgb
+    for i in range(n):
+        off=16+i*12
+        if off+12>len(data): break
+        typ,_,pos=struct.unpack_from('<III',data,off)
+        if typ!=0xfffd0002 or pos+36>len(data): continue
+        header,chunk_typ,_,_,width,height,_,_,_=struct.unpack_from('<IIIIIIIII',data,pos)
+        if chunk_typ!=typ or width*height>4_000_000: continue
+        start=pos+header
+        if header<36 or start+width*height*4>len(data): continue
+        for j in range(start,start+width*height*4,4):
+            b,g,r,a=data[j:j+4]
+            if a==0: continue
+            lum=(int(r)*299+int(g)*587+int(b)*114)//1000
+            w=min(1,max(0,(lum-35))/220)
+            data[j]=round(b*(1-w)+tb*w)
+            data[j+1]=round(g*(1-w)+tg*w)
+            data[j+2]=round(r*(1-w)+tr*w)
+    return bytes(data)
 
-def create_theme(color,size):
+def create_theme(color):
     source=base_theme()
-    rgb=tuple(int(color[i:i+2],16) for i in (1,3,5))
-    name='OptiMouse-'+color.lstrip('#').upper()+'-'+str(size)
-    target=ICONS/name
+    target=ICONS/('OptiMouse-'+color.lstrip('#').upper())
     dst=target/'cursors'
-    dst.mkdir(parents=True,exist_ok=True)
+    dst.mkdir(parents=True, exist_ok=True)
+    rgb=tuple(int(color[i:i+2],16) for i in (1,3,5))
     for entry in source.iterdir():
         output=dst/entry.name
-        if output.exists() or output.is_symlink():output.unlink()
+        if output.exists() or output.is_symlink(): output.unlink()
         if entry.is_symlink():
             link=os.readlink(entry)
-            if not os.path.isabs(link) and (source/link).exists():
-                output.symlink_to(link)
-                continue
-            src=entry.resolve()
-        else:
-            src=entry
-        if src.is_file():
-            output.write_bytes(render_xcursor(src.read_bytes(),rgb,size))
-    (target/'index.theme').write_text('[Icon Theme]\nName='+name+'\nInherits=Adwaita\n')
-    return name
+            if not os.path.isabs(link): output.symlink_to(link)
+            else:
+                try: output.write_bytes(tint_xcursor(entry.resolve().read_bytes(),rgb))
+                except OSError: pass
+        elif entry.is_file(): output.write_bytes(tint_xcursor(entry.read_bytes(),rgb))
+    (target/'index.theme').write_text('[Icon Theme]\nName=OptiMouse Custom\nComment=Cursor palette generated by OptiMouse\nInherits=Adwaita\n')
+    return target.name
 
 def current_theme():
+    for k in ('HYPRCURSOR_THEME','XCURSOR_THEME'):
+        v=os.environ.get(k)
+        if v and v!='OptiMouse-Custom': return v
     try:
-        stored=json.loads(ORIGINAL.read_text())
-        candidate=stored.get('name','')
-        if candidate and not candidate.startswith('OptiMouse-'):
-            return candidate
-    except (OSError,ValueError): pass
-    for key in ('HYPRCURSOR_THEME','XCURSOR_THEME'):
-        value=os.environ.get(key,'')
-        if value and not value.startswith('OptiMouse-'):
-            return value
-    if shutil.which('gsettings'):
-        res=run(['gsettings','get','org.gnome.desktop.interface','cursor-theme'])
-        candidate=res.stdout.strip().strip("'\\\"")
-        if candidate and not candidate.startswith('OptiMouse-'):
-            return candidate
+        r=run(['gsettings','get','org.gnome.desktop.interface','cursor-theme'])
+        value=r.stdout.strip().strip("'\"")
+        if value and value!='OptiMouse-Custom': return value
+    except (OSError,subprocess.TimeoutExpired): pass
     return 'Adwaita'
-
-def remember_original():
-    if ORIGINAL.exists(): return
-    name=current_theme()
-    CONFIG.mkdir(parents=True,exist_ok=True)
-    ORIGINAL.write_text(json.dumps({'name':name})+'\\n')
 
 def apply(data, persist=True):
     size=max(16,min(128,int(data['size'])))
-    if not data['follow_theme'] and persist:
-        remember_original()
-    theme=current_theme() if data['follow_theme'] else create_theme(data['color'],size)
+    theme=current_theme() if data['follow_theme'] else create_theme(data['color'])
     if persist:
         HYPR.mkdir(parents=True,exist_ok=True)
         PERSIST.write_text('# OptiMouse generated cursor settings\n'
@@ -144,6 +97,21 @@ def apply(data, persist=True):
                            f'env = HYPRCURSOR_SIZE,{size}\n')
     if not shutil.which('hyprctl'):
         raise RuntimeError('hyprctl is missing')
+    if persist and (HYPR/'hyprland.lua').is_file():
+        lua=HYPR/'hyprland.lua'
+        source=lua.read_text()
+        begin='-- OPTIMOUSE SETTINGS START'
+        end='-- OPTIMOUSE SETTINGS END'
+        block=(begin+'\n'+
+               'hl.env("XCURSOR_THEME", "'+theme+'")\n'+
+               'hl.env("XCURSOR_SIZE", "'+str(size)+'")\n'+
+               'hl.env("HYPRCURSOR_THEME", "'+theme+'")\n'+
+               'hl.env("HYPRCURSOR_SIZE", "'+str(size)+'")\n'+end)
+        if begin in source and end in source:
+            source=source[:source.index(begin)]+block+source[source.index(end)+len(end):]
+        else:
+            source=source.rstrip()+'\n\n'+block+'\n'
+        lua.write_text(source)
     if shutil.which('hyprctl'):
         result=run(['hyprctl','setcursor',theme,str(size)])
         if result.returncode:
@@ -151,16 +119,7 @@ def apply(data, persist=True):
     if shutil.which('gsettings'):
         run(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme])
         run(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)])
-    if data['shake'] and persist and not data['follow_theme']:
-        create_theme(data['color'],min(256,round(size*float(data.get('shake_scale',2.2)))))
     if shutil.which('systemctl') and persist:
-        # Make the Hyprland socket available to the user service even when
-        # the systemd user manager started before the graphical session.
-        names=[name for name in ('HYPRLAND_INSTANCE_SIGNATURE','WAYLAND_DISPLAY','XDG_RUNTIME_DIR') if os.environ.get(name)]
-        if names:
-            env_result=run(['systemctl','--user','import-environment',*names])
-            if env_result.returncode:
-                raise RuntimeError('Cannot pass Hyprland session to shake helper: '+env_result.stderr.strip())
         service=run(['systemctl','--user','enable','--now','optimouse-shake.service']) if data['shake'] else run(['systemctl','--user','disable','--now','optimouse-shake.service'])
         if service.returncode:
             raise RuntimeError('Shake helper: '+service.stderr.strip())
@@ -178,22 +137,20 @@ def daemon():
             r=run(['hyprctl','-j','cursorpos'])
             pos=json.loads(r.stdout)
             x=float(pos['x'])
-            y=float(pos['y'])
             now=time.monotonic()
-            samples.append((now,x,y))
+            samples.append((now,x))
             while samples and now-samples[0][0]>1.2: samples.popleft()
             if boosted_until and now>=boosted_until:
                 apply(config,persist=False)
                 boosted_until=0
                 samples.clear()
             elif not boosted_until and now>cooldown and len(samples)>6:
-                dx=[samples[i][1]-samples[i-1][1] for i in range(1,len(samples))]
-                dy=[samples[i][2]-samples[i-1][2] for i in range(1,len(samples))]
-                flips_x=sum(a*b<0 for a,b in zip(dx,dx[1:]) if abs(a)>10 and abs(b)>10)
-                flips_y=sum(a*b<0 for a,b in zip(dy,dy[1:]) if abs(a)>10 and abs(b)>10)
-                travel=sum(abs(v) for v in dx)+sum(abs(v) for v in dy)
-                if max(flips_x,flips_y)>=3 and travel>=220:
-                    theme=current_theme() if config['follow_theme'] else create_theme(config['color'],min(256,round(config['size']*float(config.get('shake_scale',2.2)))))
+                deltas=[samples[i][1]-samples[i-1][1] for i in range(1,len(samples))]
+                strong=[d for d in deltas if abs(d)>12]
+                flips=sum(a*b<0 for a,b in zip(strong,strong[1:]))
+                travel=sum(abs(v) for v in strong)
+                if flips>=4 and travel>=350:
+                    theme=current_theme() if config['follow_theme'] else 'OptiMouse-'+config['color'].lstrip('#').upper()
                     run(['hyprctl','setcursor',theme,str(min(256,round(config['size']*float(config.get('shake_scale',2.2)))))])
                     boosted_until=now+1.5
                     cooldown=now+3.0
@@ -283,11 +240,10 @@ def gui():
             apply_btn.set_sensitive(True)
             apply_btn.set_label('Apply settings')
             set_status(message)
-            if not ok:
-                dialog=Gtk.MessageDialog(transient_for=win,flags=0,message_type=Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text='OptiMouse could not apply settings')
-                dialog.format_secondary_text(message)
-                dialog.run()
-                dialog.destroy()
+            dialog=Gtk.MessageDialog(transient_for=win,flags=0,message_type=Gtk.MessageType.INFO if ok else Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text='OptiMouse: '+('Settings applied' if ok else 'Could not apply settings'))
+            dialog.format_secondary_text(message)
+            dialog.run()
+            dialog.destroy()
             return False
         def worker():
             try:
