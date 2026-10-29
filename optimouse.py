@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """OptiMouse: cursor accessibility settings for Omarchy/Hyprland."""
 import hashlib, json, os, re, shutil, struct, subprocess, sys, time, tempfile, threading
-from cursor_resizer import sized_theme
+from cursor_resizer import sized_theme, cursor_visible_height
 from pathlib import Path
 
 HOME=Path.home()
@@ -13,7 +13,7 @@ PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
 BRIDGE_PID=HOME/'.local/state/optimouse/bridge.pid'
-APP_VERSION='0.2.7'
+APP_VERSION='0.2.8'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
@@ -484,7 +484,11 @@ def gui():
                 try:
                     _theme,has_size=prepare_cursor_choice(options)
                     if has_size:
-                        message='Ready: '+str(options['size'])+' px artwork — press Apply.'
+                        drawn=cursor_visible_height(_theme,options['size'],ICONS)
+                        detail=('arrow artwork about '+str(drawn)+' px high'
+                                if drawn is not None else 'image dimensions unavailable')
+                        message=('Ready: '+str(options['size'])+' px target; '+detail+
+                                 ' at 100% display scale. Press Apply.')
                     else:
                         message='Theme has no XCursor artwork; native resizing may remain limited.'
                 except Exception as error:
@@ -582,8 +586,12 @@ def gui():
             phases={}
             try:
                 theme,refreshed,phases=apply(options)
-                message=f'Applied {theme} at {options["size"]} px.'
-                if not phases.get('resized'):
+                message=f'Applied {options["size"]} px nominal cursor setting.'
+                if phases.get('resized'):
+                    drawn=cursor_visible_height(theme,options['size'],ICONS)
+                    if drawn is not None:
+                        message+=f' Arrow artwork approximately {drawn} px high at 100% scale.'
+                else:
                     message+=' Current theme could not provide native sized artwork.'
                 if refreshed:
                     message+=' Pointer refresh requested.'
