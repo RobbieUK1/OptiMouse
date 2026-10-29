@@ -38,13 +38,23 @@ jobs:
           spec=spec_from_file_location("optimouse",Path("optimouse.py"))
           app=module_from_spec(spec)
           spec.loader.exec_module(app)
-          monitors=[{"x":0,"y":0,"width":1920,"height":1080},
-                    {"x":1920,"y":0,"width":1280,"height":1024}]
-          assert app.cursor_refresh_target(monitors,(100,200))==(1925,200)
-          assert app.cursor_refresh_target(monitors,(2300,300))==(1914,300)
-          assert app.cursor_refresh_target(monitors[:1],(100,200)) is None
-          assert app.cursor_refresh_target(monitors,(5000,200)) is None
-          assert app.cursor_refresh_target(monitors,(1919,200))==(1925,200)
-          print("Cursor output refresh and shake colour checks passed.")
+          from unittest.mock import patch
+          from types import SimpleNamespace
+          calls=[]
+          def good_run(cmd, **kwargs):
+              calls.append(cmd)
+              return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+          with patch.object(app,"run",side_effect=good_run), patch.object(app.time,"sleep"):
+              assert app.refresh_cursor_visibility()
+          assert len(calls)==2 and 'invisible = true' in calls[0][-1] and 'invisible = false' in calls[1][-1]
+          calls.clear()
+          def hide_failed(cmd, **kwargs):
+              calls.append(cmd)
+              return SimpleNamespace(returncode=1 if len(calls)==1 else 0,stdout="",stderr="")
+          with patch.object(app,"run",side_effect=hide_failed), patch.object(app.time,"sleep"):
+              assert not app.refresh_cursor_visibility()
+          assert len(calls)==2 and 'invisible = false' in calls[-1][-1]
+          print("Cursor visibility restoration and shake colour checks passed.")
+
           print("Static checks passed.")
           PY
