@@ -97,6 +97,21 @@ def apply(data, persist=True):
                            f'env = HYPRCURSOR_SIZE,{size}\n')
     if not shutil.which('hyprctl'):
         raise RuntimeError('hyprctl is missing')
+    if persist and (HYPR/'hyprland.lua').is_file():
+        lua=HYPR/'hyprland.lua'
+        source=lua.read_text()
+        begin='-- OPTIMOUSE SETTINGS START'
+        end='-- OPTIMOUSE SETTINGS END'
+        block=(begin+'\n'+
+               'hl.env("XCURSOR_THEME", "'+theme+'")\n'+
+               'hl.env("XCURSOR_SIZE", "'+str(size)+'")\n'+
+               'hl.env("HYPRCURSOR_THEME", "'+theme+'")\n'+
+               'hl.env("HYPRCURSOR_SIZE", "'+str(size)+'")\n'+end)
+        if begin in source and end in source:
+            source=source[:source.index(begin)]+block+source[source.index(end)+len(end):]
+        else:
+            source=source.rstrip()+'\n\n'+block+'\n'
+        lua.write_text(source)
     if shutil.which('hyprctl'):
         result=run(['hyprctl','setcursor',theme,str(size)])
         if result.returncode:
@@ -233,8 +248,8 @@ def gui():
             return False
         def worker():
             try:
-                theme=apply(new)
                 write_settings(new)
+                theme=apply(new)
                 GLib.idle_add(complete,'Hyprland accepted '+theme+' at '+str(new['size'])+' px. Existing application cursors may require restart.',True)
             except Exception as exc:
                 GLib.idle_add(complete,str(exc),False)
