@@ -12,7 +12,7 @@ PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
 BRIDGE_PID=HOME/'.local/state/optimouse/bridge.pid'
-APP_VERSION='0.2.4'
+APP_VERSION='0.2.5'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
@@ -61,20 +61,45 @@ def tint_xcursor(raw, rgb):
         if chunk_typ!=typ or width*height>4_000_000: continue
         start=pos+header
         if header<36 or start+width*height*4>len(data): continue
-        for j in range(start,start+width*height*4,4):
-            if data[j+3]==0:
-                continue
-            b,g,r=data[j],data[j+1],data[j+2]
-            key=(b,g,r)
-            tinted=palette.get(key)
-            if tinted is None:
-                lum=(r*299+g*587+b*114)//1000
-                w=min(1,max(0,(lum-35))/220)
-                tinted=(round(b*(1-w)+tb*w),
-                        round(g*(1-w)+tg*w),
-                        round(r*(1-w)+tr*w))
-                palette[key]=tinted
-            data[j],data[j+1],data[j+2]=tinted
+        stop=start+width*height*4
+        if sys.byteorder=='little':
+            # On Omarchy's x86-64 machines, a 32-bit memoryview allows one
+            # read and one write per pixel, instead of four Python byte
+            # operations. Keep the alpha byte unchanged; this produces
+            # byte-for-byte identical cursor images to the previous code.
+            pixels=memoryview(data)[start:stop].cast('I')
+            for index,value in enumerate(pixels):
+                if not (value & 0xff000000):
+                    continue
+                tinted=palette.get(value)
+                if tinted is None:
+                    b,g,r=value & 255,(value >> 8) & 255,(value >> 16) & 255
+                    lum=(r*299+g*587+b*114)//1000
+                    w=min(1,max(0,(lum-35))/220)
+                    tinted=((value & 0xff000000)
+                            | round(b*(1-w)+tb*w)
+                            | (round(g*(1-w)+tg*w) << 8)
+                            | (round(r*(1-w)+tr*w) << 16))
+                    palette[value]=tinted
+                pixels[index]=tinted
+            pixels.release()
+        else:
+            # XCursor pixels are always little-endian BGRA, even when
+            # Python runs on a big-endian system.
+            for j in range(start,stop,4):
+                if data[j+3]==0:
+                    continue
+                b,g,r=data[j],data[j+1],data[j+2]
+                key=(b,g,r)
+                tinted=palette.get(key)
+                if tinted is None:
+                    lum=(r*299+g*587+b*114)//1000
+                    w=min(1,max(0,(lum-35))/220)
+                    tinted=(round(b*(1-w)+tb*w),
+                            round(g*(1-w)+tg*w),
+                            round(r*(1-w)+tr*w))
+                    palette[key]=tinted
+                data[j],data[j+1],data[j+2]=tinted
     return bytes(data)
 
 def source_signature(source):
