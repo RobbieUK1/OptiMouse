@@ -39,22 +39,35 @@ jobs:
           app=module_from_spec(spec)
           spec.loader.exec_module(app)
           from unittest.mock import patch
-          from types import SimpleNamespace
-          calls=[]
-          def good_run(cmd, **kwargs):
-              calls.append(cmd)
-              return SimpleNamespace(returncode=0, stdout="ok", stderr="")
-          with patch.object(app,"run",side_effect=good_run), patch.object(app.time,"sleep"):
-              assert app.refresh_cursor_visibility()
-          assert len(calls)==2 and 'invisible = true' in calls[0][-1] and 'invisible = false' in calls[1][-1]
-          calls.clear()
-          def hide_failed(cmd, **kwargs):
-              calls.append(cmd)
-              return SimpleNamespace(returncode=1 if len(calls)==1 else 0,stdout="",stderr="")
-          with patch.object(app,"run",side_effect=hide_failed), patch.object(app.time,"sleep"):
-              assert not app.refresh_cursor_visibility()
-          assert len(calls)==2 and 'invisible = false' in calls[-1][-1]
-          print("Cursor visibility restoration and shake colour checks passed.")
-
+          opts=dict(app.DEFAULT,follow_theme=False,size=48,color="#71FACC")
+          def common_mocks():
+              return [
+                  patch.object(app, "create_theme", return_value="OptiMouse-71FACC"),
+                  patch.object(app, "persist_cursor"),
+                  patch.object(app, "checked"),
+                  patch.object(app.shutil, "which", return_value="/usr/bin/tool"),
+                  patch.object(app.time,"time_ns",return_value=123456789000000),
+              ]
+          from contextlib import ExitStack
+          with ExitStack() as stack:
+              for m in common_mocks(): stack.enter_context(m)
+              stack.enter_context(patch.object(app,"overlay_running",return_value=True))
+              save=stack.enter_context(patch.object(app,"write_settings"))
+              result=app.apply(opts)
+              assert result==("OptiMouse-71FACC",True)
+              saved=save.call_args.args[0]
+              assert saved["preview_token"]=="123456789000000"
+              assert saved["size"]==48 and saved["color"]=="#71FACC"
+              assert "preview_token" not in opts
+          with ExitStack() as stack:
+              for m in common_mocks(): stack.enter_context(m)
+              stack.enter_context(patch.object(app,"overlay_running",return_value=False))
+              save=stack.enter_context(patch.object(app,"write_settings"))
+              result=app.apply(opts)
+              assert result==("OptiMouse-71FACC",False)
+              assert save.call_args.args[0]==opts
+          assert "refresh_cursor_visibility" not in Path("optimouse.py").read_text()
+          assert "refresh_cursor_across_outputs" not in Path("optimouse.py").read_text()
+          print("Apply dispatches existing Preview path after cursor settings are applied.")
           print("Static checks passed.")
           PY
