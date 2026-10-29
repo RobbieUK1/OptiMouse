@@ -11,6 +11,17 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate Python
         run: python3 -m py_compile optimouse.py plugin/cursor-bridge.py
+      - name: Verify application version and standalone timing label
+        run: |
+          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.1'
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('optimouse.py').read_text()
+          assert "timing.set_text(f'Apply time: {seconds:.2f} s')" in source
+          assert "status.set_max_width_chars(66)" in source
+          assert "GLib.idle_add(finish,message,time.monotonic()-started)" in source
+          print('Apply timing visibility checks passed.')
+          PY
       - name: Validate installer
         run: bash -n install.sh
       - name: Validate plugin manifest
