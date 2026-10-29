@@ -245,7 +245,7 @@ def update_gtk_settings_ini(content,theme,size):
         output.extend(updates)
     elif inside and not inserted:
         output.extend(updates)
-    return '\\n'.join(output)+'\\n'
+    return '\n'.join(output)+'\n'
 
 def sync_gtk_cursor_settings(theme,size):
     """Synchronise GTK3/GTK4 cursor settings without rewriting other options.
