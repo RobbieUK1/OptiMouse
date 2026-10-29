@@ -318,9 +318,12 @@ def gui():
             return False
         def worker():
             try:
+                apply_start=time.monotonic()
                 theme,refreshed=apply(options)
+                apply_seconds=time.monotonic()-apply_start
                 message='Applied '+theme+' at '+str(options['size'])+' px. '+('Pointer preview triggered to refresh the colour. ' if refreshed else 'Overlay unavailable; use Preview when it starts. ')+'Shake overlay: '+(
                          'enabled' if options['shake'] else 'disabled')+'.'
+                message+=f' Apply completed in {apply_seconds:.2f} seconds.'
                 if not PLUGIN_DIR.exists():
                     message+=' Shake overlay is not installed; run the updated installer.'
                 elif not overlay_running():
