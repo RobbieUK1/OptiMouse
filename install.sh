@@ -72,16 +72,38 @@ if command -v omarchy-shell >/dev/null; then
   omarchy-shell shell rescanPlugins || echo "Warning: shell plugin rescan failed." >&2
 fi
 if command -v omarchy >/dev/null; then
-  if omarchy plugin enable "$PLUGIN_ID" --yes; then
-    echo "Shake overlay enabled; restarting Omarchy shell to clear stale QML component cache…"
-    if ! omarchy restart shell; then
-      echo "Warning: Omarchy shell restart failed; run 'omarchy restart shell' manually." >&2
-    fi
-  else
-    echo "Warning: shake overlay could not be enabled. Check 'omarchy plugin list'." >&2
+  if ! omarchy plugin validate "$APP/plugin"; then
+    echo "Warning: Omarchy rejected the shake plugin manifest. Preview cannot work until this is resolved." >&2
+  fi
+  if ! omarchy plugin enable "$PLUGIN_ID" --yes; then
+    echo "Warning: plugin enable returned an error (it may already be enabled)." >&2
+  fi
+  # Always restart, including when the plugin was already enabled.
+  echo "Restarting Omarchy shell to load the new shake service…"
+  if ! omarchy restart shell; then
+    echo "Warning: shell restart failed. Run 'omarchy restart shell' manually." >&2
   fi
 else
   echo "Warning: Omarchy plugin command unavailable; shake overlay needs to be enabled manually." >&2
+fi
+
+BRIDGE_PID="$HOME/.local/state/optimouse/bridge.pid"
+active_bridge() {
+  [[ -f "$BRIDGE_PID" ]] || return 1
+  local pid
+  pid=$(cat "$BRIDGE_PID" 2>/dev/null) || return 1
+  [[ "$pid" =~ ^[0-9]+$ && -r "/proc/$pid/cmdline" ]] || return 1
+  tr '\\0' ' ' < "/proc/$pid/cmdline" | grep -q "cursor-bridge.py"
+}
+for i in 1 2 3 4 5; do
+  if active_bridge; then
+    echo "Shake overlay process running."
+    break
+  fi
+  sleep 0.5
+done
+if ! active_bridge; then
+  echo "Warning: shake overlay did not start. Run 'omarchy plugin list' and check the shell logs." >&2
 fi
 
 echo
