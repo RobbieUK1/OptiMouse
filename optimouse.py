@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """OptiMouse: cursor accessibility settings for Omarchy/Hyprland."""
 import hashlib, json, os, re, shutil, struct, subprocess, sys, time, tempfile, threading
+from cursor_resizer import sized_theme
 from pathlib import Path
 
 HOME=Path.home()
@@ -12,7 +13,7 @@ PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
 BRIDGE_PID=HOME/'.local/state/optimouse/bridge.pid'
-APP_VERSION='0.2.6'
+APP_VERSION='0.2.7'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
@@ -153,9 +154,23 @@ def create_theme(color):
 _THEME_BUILD_LOCK=threading.Lock()
 
 def prepare_custom_theme(color):
-    """Build cursor files without changing active desktop settings."""
+    """Build a custom colour without changing active desktop settings."""
     with _THEME_BUILD_LOCK:
         return create_theme(color)
+
+
+def prepare_cursor_choice(data):
+    """Generate the selected cursor size and colour, but never activate them.
+
+    Size-specific raster themes are cached; using this during preparation
+    allows Apply to load the already-built artwork straight away.
+    """
+    size=max(16,min(128,int(data['size'])))
+    with _THEME_BUILD_LOCK:
+        base=desktop_theme() if data['follow_theme'] else create_theme(data['color'])
+        return sized_theme(base,size,ICONS,
+                           (ICONS,HOME/'.icons',Path('/usr/share/icons')))
+
 
 
 def current_theme():
@@ -281,8 +296,9 @@ def apply(data):
     checkpoint=time.monotonic()
     size=max(16,min(128,int(data['size'])))
     follow=bool(data['follow_theme'])
-    theme=desktop_theme() if follow else prepare_custom_theme(data['color'])
+    theme,has_raster_size=prepare_cursor_choice(data)
     phases['theme']=time.monotonic()-checkpoint
+    phases['resized']=float(has_raster_size)
     if not shutil.which('hyprctl'):
         raise RuntimeError('hyprctl is unavailable')
     checkpoint=time.monotonic()
