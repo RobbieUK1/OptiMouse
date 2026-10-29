@@ -155,7 +155,8 @@ switch:checked { background: #6ef4c0; }
 def gui():
     import gi
     gi.require_version('Gtk','3.0')
-    from gi.repository import Gtk,Gdk
+    from gi.repository import Gtk,Gdk,GLib
+    import threading
     data=read_settings()
     win=Gtk.Window(title='OptiMouse')
     win.set_default_size(560,580)
@@ -213,11 +214,23 @@ def gui():
         c=chooser.get_rgba()
         color='#%02X%02X%02X'%(round(c.red*255),round(c.green*255),round(c.blue*255))
         new={'size':int(size.get_value()),'color':color,'follow_theme':follow.get_active(),'shake':shake.get_active(),'shake_scale':2.2}
-        try:
-            theme=apply(new)
-            write_settings(new)
-            set_status('Applied: '+theme+' / '+str(new['size'])+' px. Restart apps that retain an old cursor.')
-        except Exception as e:set_status('Unable to apply: '+str(e))
+        apply_btn.set_sensitive(False)
+        apply_btn.set_label('Applying…')
+        set_status('Applying pointer settings…')
+        def finish(message, success):
+            apply_btn.set_sensitive(True)
+            apply_btn.set_label('Apply settings')
+            set_status(message)
+            return False
+        def worker():
+            try:
+                theme=apply(new)
+                write_settings(new)
+                msg='✓ Applied: '+theme+' / '+str(new['size'])+' px. Some apps may need restarting.'
+                GLib.idle_add(finish,msg,True)
+            except Exception as e:
+                GLib.idle_add(finish,'Unable to apply: '+str(e),False)
+        threading.Thread(target=worker,daemon=True).start()
     def reset_click(*_):
         size.set_value(DEFAULT['size']); follow.set_active(True);shake.set_active(False)
         rgba.parse(DEFAULT['color']);chooser.set_rgba(rgba)
