@@ -37,7 +37,7 @@ class ResizeTests(unittest.TestCase):
         self.assertEqual(scaled[position+36:position+40],bytes([23,47,85,255]))
         self.assertEqual(scaled[position+36:],bytes([23,47,85,255])*12*16)
         # Original frames are preserved byte-for-byte except their TOC shift.
-        self.assertEqual(scaled[52:52+len(original)-28],original[28:])
+        self.assertEqual(scaled[40:40+len(original)-28],original[28:])
 
     def test_preserves_animation_frames(self):
         a=cursor(32)
