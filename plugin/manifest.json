@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.robbieuk1.optimouse-shake",
+  "name": "OptiMouse Shake Overlay",
+  "version": "0.2.0",
+  "author": "RobbieUK1 (based on Gabriel Rocha's MIT-licensed Big Cursor)",
+  "description": "Shake to find and preview using a vector pointer overlay. Controlled from OptiMouse.",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
