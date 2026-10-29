@@ -18,50 +18,96 @@ MAX_IMAGES = 4096
 MAX_PIXELS = 4_000_000
 
 
-def scale_cursor_file(raw, desired):
-    """Append exact-size raster frames, keeping all original XCursor chunks."""
-    desired = int(desired)
-    if not 8 <= desired <= 256 or len(raw) < 16 or raw[:4] != b'Xcur':
-        return raw
-    header, version, count = struct.unpack_from('<III', raw, 4)
+def _frames(raw):
+    """Return valid XCursor image frames in TOC order, or an empty list."""
+    if len(raw) < 16 or raw[:4] != b'Xcur':
+        return []
+    header, _, count = struct.unpack_from('<III', raw, 4)
     if header != 16 or not 0 < count <= MAX_IMAGES or 16 + count * 12 > len(raw):
-        return raw
-
-    entries = []
-    sizes = set()
-    for i in range(count):
-        kind, nominal, offset = struct.unpack_from('<III', raw, 16 + i * 12)
-        if offset < 16 + 12 * count or offset + 16 > len(raw):
-            return raw
-        entries.append((kind, nominal, offset))
-        if kind == IMAGE_TYPE:
-            sizes.add(nominal)
-    if not sizes or desired in sizes:
-        return raw
-    nearest = min(sizes, key=lambda n: (abs(n - desired), -n))
-    if not nearest:
-        return raw
-
-    extras = []
-    for kind, nominal, offset in entries:
-        if kind != IMAGE_TYPE or nominal != nearest or offset + 36 > len(raw):
+        return []
+    frames = []
+    for index in range(count):
+        kind, nominal, offset = struct.unpack_from('<III', raw, 16 + index * 12)
+        if kind != IMAGE_TYPE:
             continue
-        (chunk_header, chunk_type, subtype, frame_version, w, h, xhot, yhot,
-         delay) = struct.unpack_from('<9I', raw, offset)
-        begin = offset + chunk_header
-        if (chunk_type != IMAGE_TYPE or subtype != nearest
-                or frame_version != 1 or chunk_header < 36 or w == 0 or h == 0
-                or w * h > MAX_PIXELS or begin + w * h * 4 > len(raw)):
+        if offset < 16 + 12 * count or offset + 36 > len(raw):
+            return []
+        (chunk_header, chunk_type, subtype, frame_version, w, h,
+         xhot, yhot, delay) = struct.unpack_from('<9I', raw, offset)
+        start = offset + chunk_header
+        if (chunk_type != IMAGE_TYPE or subtype != nominal
+                or chunk_header < 36 or frame_version != 1
+                or not w or not h or w * h > MAX_PIXELS
+                or xhot >= w or yhot >= h
+                or start + w * h * 4 > len(raw)):
+            return []
+        frames.append((nominal, w, h, xhot, yhot, delay,
+                       memoryview(raw)[start:start + w * h * 4]))
+    return frames
+
+
+def _visible_height(pixels, width, height, threshold=16):
+    """Height of the drawn shape, ignoring transparent cursor margins."""
+    first = height
+    last = -1
+    for y in range(height):
+        row = y * width * 4
+        for x in range(width):
+            if pixels[row + x * 4 + 3] >= threshold:
+                first = min(first, y)
+                last = y
+                break
+    return max(0, last - first + 1)
+
+
+def _reference_coverage(directory, desired):
+    """How much of nominal cursor size the visible arrow actually occupies."""
+    for name in ('left_ptr', 'default', 'arrow'):
+        path = directory / name
+        if not path.is_file():
             continue
-        ratio = desired / nearest
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        frames = _frames(raw)
+        if not frames:
+            continue
+        nominal = min({f[0] for f in frames},
+                      key=lambda size: (abs(size - desired), -size))
+        chosen = next(f for f in frames if f[0] == nominal)
+        drawn = _visible_height(chosen[6], chosen[1], chosen[2])
+        if drawn:
+            # Avoid pathological image files growing unreasonably large.
+            return max(0.5, min(2.0, drawn / nominal))
+    return 1.0
+
+
+def scale_cursor_file(raw, desired, coverage=1.0):
+    """Build images whose visible arrow height tracks the slider number.
+
+    Each generated file contains only images marked with the requested XCursor
+    nominal size. Source cursor files remain untouched. Existing animation
+    frames are preserved, with proportionately scaled hotspots and delays.
+    """
+    desired = int(desired)
+    if not 8 <= desired <= 256:
+        return raw
+    frames = _frames(raw)
+    if not frames:
+        return raw
+    nearest = min({f[0] for f in frames},
+                  key=lambda size: (abs(size - desired), -size))
+    ratio = desired / (nearest * coverage)
+    new_chunks = []
+    for nominal, w, h, xhot, yhot, delay, src in frames:
+        if nominal != nearest:
+            continue
         new_w = max(1, round(w * ratio))
         new_h = max(1, round(h * ratio))
-        if new_w * new_h > MAX_PIXELS or new_w > 2048 or new_h > 2048:
-            continue
-        src = memoryview(raw)[begin:begin + w * h * 4]
+        if (new_w * new_h > MAX_PIXELS or new_w > 2048 or new_h > 2048):
+            return raw
         resized = bytearray(new_w * new_h * 4)
-        # Nearest-neighbour preserves existing alpha and pixel colours.
-        # Preparation is backgrounded; no third-party image dependency.
         for y in range(new_h):
             sy = min(h - 1, (y * h) // new_h)
             dst_row = y * new_w * 4
@@ -73,21 +119,42 @@ def scale_cursor_file(raw, desired):
                 resized[do:do + 4] = src[so:so + 4]
         new_x = min(new_w - 1, max(0, round(xhot * ratio)))
         new_y = min(new_h - 1, max(0, round(yhot * ratio)))
-        extra_header = struct.pack('<9I', 36, IMAGE_TYPE, desired, frame_version,
-                                   new_w, new_h, new_x, new_y, delay)
-        extras.append(extra_header + bytes(resized))
-    if not extras:
+        header = struct.pack('<9I', 36, IMAGE_TYPE, desired, 1,
+                             new_w, new_h, new_x, new_y, delay)
+        new_chunks.append(header + bytes(resized))
+    if not new_chunks:
         return raw
 
-    shift = 12 * len(extras)
-    toc = [struct.pack('<III', kind, nominal, offset + shift)
-           for kind, nominal, offset in entries]
-    position = len(raw) + shift
-    for chunk in extras:
+    count = len(new_chunks)
+    position = 16 + count * 12
+    toc = []
+    for chunk in new_chunks:
         toc.append(struct.pack('<III', IMAGE_TYPE, desired, position))
         position += len(chunk)
-    return (raw[:8] + struct.pack('<II', version, count + len(extras))
-            + b''.join(toc) + raw[16 + count * 12:] + b''.join(extras))
+    version = struct.unpack_from('<I', raw, 8)[0]
+    return (struct.pack('<4sIII', b'Xcur', 16, version, count)
+            + b''.join(toc) + b''.join(new_chunks))
+
+
+def cursor_visible_height(theme, nominal_size, icons):
+    """Measure alpha-bounded arrow height in the generated cursor artwork."""
+    folder = Path(icons) / theme / 'cursors'
+    for name in ('left_ptr', 'default', 'arrow'):
+        path = folder / name
+        if not path.is_file():
+            continue
+        try:
+            frames = _frames(path.read_bytes())
+        except OSError:
+            continue
+        nearest = sorted(frames, key=lambda frame:
+                         (abs(frame[0] - nominal_size), -frame[0]))
+        if nearest:
+            frame = nearest[0]
+            drawn = _visible_height(frame[6], frame[1], frame[2])
+            if drawn:
+                return drawn
+    return None
 
 
 def find_xcursor_theme(name, icon_dirs):
@@ -106,7 +173,7 @@ def sized_theme(name, size, icons, icon_dirs):
     source = find_xcursor_theme(name, icon_dirs)
     if source is None:
         return name, False
-    output_name = 'OptiMouse-Sized-' + name + '-' + str(size)
+    output_name = 'OptiMouse-VisualSized-' + name + '-' + str(size)
     target = Path(icons) / output_name
     destination = target / 'cursors'
     marker = target / '.optimouse-size-cache.json'
@@ -129,6 +196,7 @@ def sized_theme(name, size, icons, icon_dirs):
 
     destination.mkdir(parents=True, exist_ok=True)
     marker.unlink(missing_ok=True)
+    coverage = _reference_coverage(source, size)
     for entry in items:
         output = destination / entry.name
         output.unlink(missing_ok=True)
@@ -137,11 +205,11 @@ def sized_theme(name, size, icons, icon_dirs):
             if not os.path.isabs(link):
                 output.symlink_to(link)
             else:
-                output.write_bytes(scale_cursor_file(entry.resolve().read_bytes(), size))
+                output.write_bytes(scale_cursor_file(entry.resolve().read_bytes(), size, coverage))
         elif entry.is_file():
-            output.write_bytes(scale_cursor_file(entry.read_bytes(), size))
+            output.write_bytes(scale_cursor_file(entry.read_bytes(), size, coverage))
     (target / 'index.theme').write_text(
-        '[Icon Theme]\nName=OptiMouse Sized ' + str(size) +
+        '[Icon Theme]\nName=OptiMouse Visible Sized ' + str(size) +
         '\nComment=Pre-rendered cursor size from ' + name +
         '\nInherits=' + name + '\n')
     fd, tmp = tempfile.mkstemp(prefix='.optimouse-size-', dir=target)
