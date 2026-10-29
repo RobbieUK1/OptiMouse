@@ -10,6 +10,7 @@ ICONS=HOME/'.local/share/icons'
 HYPR=HOME/'.config/hypr'
 PERSIST=HYPR/'optimouse.conf'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2}
+ORIGINAL=CONFIG/'original-theme.json'
 
 def run(args, **kwargs):
     return subprocess.run(args, capture_output=True, text=True, timeout=8, **kwargs)
@@ -102,22 +103,37 @@ def create_theme(color,size):
             src=entry
         if src.is_file():
             output.write_bytes(render_xcursor(src.read_bytes(),rgb,size))
-    (target/'index.theme').write_text('[Icon Theme]\\nName='+name+'\\nInherits=Adwaita\\n')
+    (target/'index.theme').write_text('[Icon Theme]\nName='+name+'\nInherits=Adwaita\n')
     return name
 
 def current_theme():
-    for k in ('HYPRCURSOR_THEME','XCURSOR_THEME'):
-        v=os.environ.get(k)
-        if v and v!='OptiMouse-Custom': return v
     try:
-        r=run(['gsettings','get','org.gnome.desktop.interface','cursor-theme'])
-        value=r.stdout.strip().strip("'\"")
-        if value and value!='OptiMouse-Custom': return value
-    except (OSError,subprocess.TimeoutExpired): pass
+        stored=json.loads(ORIGINAL.read_text())
+        candidate=stored.get('name','')
+        if candidate and not candidate.startswith('OptiMouse-'):
+            return candidate
+    except (OSError,ValueError): pass
+    for key in ('HYPRCURSOR_THEME','XCURSOR_THEME'):
+        value=os.environ.get(key,'')
+        if value and not value.startswith('OptiMouse-'):
+            return value
+    if shutil.which('gsettings'):
+        res=run(['gsettings','get','org.gnome.desktop.interface','cursor-theme'])
+        candidate=res.stdout.strip().strip("'\\\"")
+        if candidate and not candidate.startswith('OptiMouse-'):
+            return candidate
     return 'Adwaita'
+
+def remember_original():
+    if ORIGINAL.exists(): return
+    name=current_theme()
+    CONFIG.mkdir(parents=True,exist_ok=True)
+    ORIGINAL.write_text(json.dumps({'name':name})+'\\n')
 
 def apply(data, persist=True):
     size=max(16,min(128,int(data['size'])))
+    if not data['follow_theme'] and persist:
+        remember_original()
     theme=current_theme() if data['follow_theme'] else create_theme(data['color'],size)
     if persist:
         HYPR.mkdir(parents=True,exist_ok=True)
@@ -155,19 +171,21 @@ def daemon():
             r=run(['hyprctl','-j','cursorpos'])
             pos=json.loads(r.stdout)
             x=float(pos['x'])
+            y=float(pos['y'])
             now=time.monotonic()
-            samples.append((now,x))
+            samples.append((now,x,y))
             while samples and now-samples[0][0]>1.2: samples.popleft()
             if boosted_until and now>=boosted_until:
                 apply(config,persist=False)
                 boosted_until=0
                 samples.clear()
             elif not boosted_until and now>cooldown and len(samples)>6:
-                deltas=[samples[i][1]-samples[i-1][1] for i in range(1,len(samples))]
-                strong=[d for d in deltas if abs(d)>12]
-                flips=sum(a*b<0 for a,b in zip(strong,strong[1:]))
-                travel=sum(abs(v) for v in strong)
-                if flips>=4 and travel>=350:
+                dx=[samples[i][1]-samples[i-1][1] for i in range(1,len(samples))]
+                dy=[samples[i][2]-samples[i-1][2] for i in range(1,len(samples))]
+                flips_x=sum(a*b<0 for a,b in zip(dx,dx[1:]) if abs(a)>10 and abs(b)>10)
+                flips_y=sum(a*b<0 for a,b in zip(dy,dy[1:]) if abs(a)>10 and abs(b)>10)
+                travel=sum(abs(v) for v in dx)+sum(abs(v) for v in dy)
+                if max(flips_x,flips_y)>=3 and travel>=220:
                     theme=current_theme() if config['follow_theme'] else create_theme(config['color'],min(256,round(config['size']*float(config.get('shake_scale',2.2)))))
                     run(['hyprctl','setcursor',theme,str(min(256,round(config['size']*float(config.get('shake_scale',2.2)))))])
                     boosted_until=now+1.5
@@ -258,10 +276,11 @@ def gui():
             apply_btn.set_sensitive(True)
             apply_btn.set_label('Apply settings')
             set_status(message)
-            dialog=Gtk.MessageDialog(transient_for=win,flags=0,message_type=Gtk.MessageType.INFO if ok else Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text='OptiMouse: '+('Settings applied' if ok else 'Could not apply settings'))
-            dialog.format_secondary_text(message)
-            dialog.run()
-            dialog.destroy()
+            if not ok:
+                dialog=Gtk.MessageDialog(transient_for=win,flags=0,message_type=Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text='OptiMouse could not apply settings')
+                dialog.format_secondary_text(message)
+                dialog.run()
+                dialog.destroy()
             return False
         def worker():
             try:
