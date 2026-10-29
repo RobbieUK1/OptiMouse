@@ -13,7 +13,7 @@ jobs:
         run: python3 -m py_compile optimouse.py plugin/cursor-bridge.py
       - name: Verify application version and standalone timing label
         run: |
-          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.4'
+          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.5'
           python3 - <<'PY'
           from pathlib import Path
           source=Path('optimouse.py').read_text()
@@ -22,6 +22,8 @@ jobs:
           assert "GLib.idle_add(finish,message,time.monotonic()-started,phases)" in source
           assert "breakdown.set_text(" in source
           assert "source_signature(" in source
+          assert "memoryview(data)[start:stop].cast('I')" in source
+          assert "if sys.byteorder=='little':" in source
           # The previous self-managed Gtk.ColorButton popup could appear in
           # the screen's top-left on Hyprland. A transient modal dialog must
           # belong to the settings window and keep Cancel non-destructive.
