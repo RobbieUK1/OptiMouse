@@ -10,10 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate Python
-        run: python3 -m py_compile optimouse.py plugin/cursor-bridge.py
+        run: python3 -m py_compile optimouse.py cursor_resizer.py plugin/cursor-bridge.py
       - name: Verify application version and standalone timing label
         run: |
-          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.6'
+          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.7'
           python3 - <<'PY'
           from pathlib import Path
           source=Path('optimouse.py').read_text()
@@ -28,6 +28,9 @@ jobs:
           assert "threading.Lock()" in source
           assert "queue_colour_preload()" in source
           assert "sync_gtk_cursor_settings(theme,size)" in source
+          assert "prepare_cursor_choice(options)" in source
+          assert "size.connect('value-changed',queue_colour_preload)" in source
+          assert "from cursor_resizer import sized_theme" in source
           # The previous self-managed Gtk.ColorButton popup could appear in
           # the screen's top-left on Hyprland. A transient modal dialog must
           # belong to the settings window and keep Cancel non-destructive.
@@ -60,6 +63,7 @@ jobs:
               assert required in service, required
           assert "omarchroma" not in Path("optimouse.py").read_text().lower()
           installer=Path("install.sh").read_text()
+          assert 'install -m644 "$STAGING/cursor_resizer.py" "$APP/cursor_resizer.py"' in installer
           assert 'omarchy plugin enable "$PLUGIN_ID"' in installer
           assert 'omarchy plugin enable "$PLUGIN_ID" --yes' not in installer
           assert 'omarchy plugin list --json' in installer
@@ -76,7 +80,7 @@ jobs:
           opts=dict(app.DEFAULT,follow_theme=False,size=48,color="#71FACC")
           def common_mocks():
               return [
-                  patch.object(app, "create_theme", return_value="OptiMouse-71FACC"),
+                  patch.object(app, "prepare_cursor_choice", return_value=("OptiMouse-Sized-OptiMouse-71FACC-48",True)),
                   patch.object(app, "sync_gtk_cursor_settings"),
                   patch.object(app, "persist_cursor"),
                   patch.object(app, "checked"),
@@ -90,9 +94,9 @@ jobs:
               save=stack.enter_context(patch.object(app,"write_settings"))
               checked=stack.enter_context(patch.object(app,"checked"))
               result=app.apply(opts)
-              assert checked.call_args_list[0].args[0]==["hyprctl","setcursor","OptiMouse-71FACC","48"]
+              assert checked.call_args_list[0].args[0]==["hyprctl","setcursor","OptiMouse-Sized-OptiMouse-71FACC-48","48"]
               assert sum(1 for c in checked.call_args_list if c.args[0][0]=="hyprctl")==1
-              assert result[:2]==("OptiMouse-71FACC",True)
+              assert result[:2]==("OptiMouse-Sized-OptiMouse-71FACC-48",True)
               assert all(key in result[2] for key in ("theme","save","hyprland","gtk","preview"))
               saved=save.call_args.args[0]
               assert saved["preview_token"]=="123456789000000"
@@ -103,7 +107,7 @@ jobs:
               stack.enter_context(patch.object(app,"overlay_running",return_value=False))
               save=stack.enter_context(patch.object(app,"write_settings"))
               result=app.apply(opts)
-              assert result[:2]==("OptiMouse-71FACC",False)
+              assert result[:2]==("OptiMouse-Sized-OptiMouse-71FACC-48",False)
               assert save.call_args.args[0]==opts
           # A previously generated colour should reuse its complete theme.
           from tempfile import TemporaryDirectory
