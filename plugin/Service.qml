@@ -52,8 +52,18 @@ Item {
   property bool cursorHidden: false
   // Sampled from the current cursor theme by the bridge; these match the arrow
   // drawn by the cursor themes Omarchy ships with until the first reply lands.
-  property color cursorFill: "#000000"
-  property color cursorStroke: "#ffffff"
+  property color cursorFill: "#101010"
+  property color cursorStroke: "#71FACC"
+
+  // Always use OptiMouse's selected colour on the enlarged arrow's outline.
+  // The ordinary cursor can still follow the desktop theme independently.
+  function contrastFill(hex) {
+    var r = parseInt(hex.slice(1, 3), 16)
+    var g = parseInt(hex.slice(3, 5), 16)
+    var b = parseInt(hex.slice(5, 7), 16)
+    return (r * 0.2126 + g * 0.7152 + b * 0.0722) < 115
+      ? "#ffffff" : "#101010"
+  }
 
   readonly property bool enlarged: root.level > 0 && root.cursorReady
   readonly property real currentSize: root.baseSize
@@ -109,10 +119,8 @@ Item {
     root.followTheme = entry.follow_theme === undefined ? true : Boolean(entry.follow_theme)
     var chosen = String(entry.color || "#71FACC")
     root.selectedColor = /^#[0-9A-Fa-f]{6}$/.test(chosen) ? chosen : "#71FACC"
-    if (!root.followTheme) {
-      root.cursorFill = root.selectedColor
-      root.cursorStroke = "#121c18"
-    } else root.refreshCursorColors()
+    root.cursorFill = root.contrastFill(root.selectedColor)
+    root.cursorStroke = root.selectedColor
     var nextPreview = String(entry.preview_token || "")
     if (!root.settingsLoaded) {
       root.lastPreviewToken = nextPreview
@@ -230,10 +238,8 @@ Item {
   function handleLine(line) {
     var parts = String(line || "").trim().split(/\s+/)
     if (parts.length === 3 && parts[0] === "colors") {
-      if (root.followTheme) {
-        root.cursorFill = parts[1]
-        root.cursorStroke = parts[2]
-      }
+      // Theme colour samples are not used: they could override a colour
+      // explicitly selected in OptiMouse, especially on the next shake.
       return
     }
     root.addSample(line)
@@ -241,7 +247,8 @@ Item {
 
   onEnlargedChanged: {
     root.setCursorHidden(root.enlarged)
-    if (root.enlarged) root.refreshCursorColors()
+    // The selected colour is retained instead of being overwritten by the
+    // GTK cursor theme when a shake begins.
   }
 
   Timer {
@@ -307,7 +314,6 @@ Item {
       bridgeRestart.restart()
     }
     onRunningChanged: if (running) {
-      root.refreshCursorColors()
       if (root.enlarged) root.setCursorHidden(true)
     }
   }
