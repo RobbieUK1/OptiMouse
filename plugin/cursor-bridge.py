@@ -20,6 +20,10 @@ import struct
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+STATE_DIR = Path.home() / '.local/state/optimouse'
+PID_FILE = STATE_DIR / 'bridge.pid'
 
 FAST_INTERVAL = 0.008  # while the pointer is moving
 IDLE_INTERVAL = 0.05  # after it has been still for IDLE_AFTER seconds
@@ -149,6 +153,10 @@ def cursor_colors():
 
 
 def main():
+    # Give the settings application positive evidence that the overlay bridge
+    # has actually started. A plugin directory existing is not proof of this.
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    PID_FILE.write_text(str(os.getpid()) + "\n")
     path = socket_path()
     stdin = sys.stdin.fileno()
     pending = b""
@@ -201,6 +209,11 @@ def main():
                 request(path, COMMANDS["cursor show"])
             except OSError:
                 pass
+        try:
+            if PID_FILE.read_text().strip() == str(os.getpid()):
+                PID_FILE.unlink()
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
