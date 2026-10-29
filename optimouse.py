@@ -128,21 +128,6 @@ def apply(data, persist=True):
                            f'env = HYPRCURSOR_SIZE,{size}\n')
     if not shutil.which('hyprctl'):
         raise RuntimeError('hyprctl is missing')
-    if False and persist and (HYPR/'hyprland.lua').is_file():
-        lua=HYPR/'hyprland.lua'
-        source=lua.read_text()
-        begin='-- OPTIMOUSE SETTINGS START'
-        end='-- OPTIMOUSE SETTINGS END'
-        block=(begin+'\n'+
-               'hl.env("XCURSOR_THEME", "'+theme+'")\n'+
-               'hl.env("XCURSOR_SIZE", "'+str(size)+'")\n'+
-               'hl.env("HYPRCURSOR_THEME", "'+theme+'")\n'+
-               'hl.env("HYPRCURSOR_SIZE", "'+str(size)+'")\n'+end)
-        if begin in source and end in source:
-            source=source[:source.index(begin)]+block+source[source.index(end)+len(end):]
-        else:
-            source=source.rstrip()+'\n\n'+block+'\n'
-        lua.write_text(source)
     if shutil.which('hyprctl'):
         result=run(['hyprctl','setcursor',theme,str(size)])
         if result.returncode:
@@ -150,6 +135,8 @@ def apply(data, persist=True):
     if shutil.which('gsettings'):
         run(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme])
         run(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)])
+    if data['shake'] and persist and not data['follow_theme']:
+        create_theme(data['color'],min(256,round(size*float(data.get('shake_scale',2.2)))))
     if shutil.which('systemctl') and persist:
         service=run(['systemctl','--user','enable','--now','optimouse-shake.service']) if data['shake'] else run(['systemctl','--user','disable','--now','optimouse-shake.service'])
         if service.returncode:
