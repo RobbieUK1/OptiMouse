@@ -71,20 +71,47 @@ fi
 if command -v omarchy-shell >/dev/null; then
   omarchy-shell shell rescanPlugins || echo "Warning: shell plugin rescan failed." >&2
 fi
-if command -v omarchy >/dev/null; then
+if command -v omarchy >/dev/null && command -v omarchy-shell >/dev/null; then
   if ! omarchy plugin validate "$APP/plugin"; then
-    echo "Warning: Omarchy rejected the shake plugin manifest. Preview cannot work until this is resolved." >&2
+    echo "ERROR: Omarchy rejected the shake plugin manifest." >&2
+    exit 1
   fi
-  if ! omarchy plugin enable "$PLUGIN_ID" --yes; then
-    echo "Warning: plugin enable returned an error (it may already be enabled)." >&2
+
+  # Plugin discovery is asynchronous: the shell may not know this ID yet.
+  omarchy-shell shell rescanPlugins >/dev/null || true
+  discovered=0
+  for (( attempt=0; attempt<40; attempt++ )); do
+    if omarchy plugin list --json 2>/dev/null | jq -e --arg id "$PLUGIN_ID" \
+        'any(.[]; .id == $id)' >/dev/null 2>&1; then
+      discovered=1
+      break
+    fi
+    sleep 0.05
+  done
+  if (( ! discovered )); then
+    echo "ERROR: Omarchy did not discover the shake plugin; check the plugin directory and shell logs." >&2
+    exit 1
   fi
-  # Always restart, including when the plugin was already enabled.
-  echo "Restarting Omarchy shell to load the new shake service…"
+
+  # 'omarchy plugin enable' does not accept --yes; use the exact supported form.
+  if ! omarchy plugin enable "$PLUGIN_ID"; then
+    echo "ERROR: Omarchy could not enable the shake plugin." >&2
+    exit 1
+  fi
+
+  if ! omarchy plugin list --json | jq -e --arg id "$PLUGIN_ID" \
+      'any(.[]; .id == $id and .enabled == true)' >/dev/null; then
+    echo "ERROR: Plugin was discovered but is not enabled." >&2
+    exit 1
+  fi
+
+  echo "Shake plugin confirmed enabled; restarting Omarchy shell to activate the service…"
   if ! omarchy restart shell; then
     echo "Warning: shell restart failed. Run 'omarchy restart shell' manually." >&2
   fi
 else
-  echo "Warning: Omarchy plugin command unavailable; shake overlay needs to be enabled manually." >&2
+  echo "ERROR: Omarchy shell/plugin command is unavailable; shake overlay cannot start." >&2
+  exit 1
 fi
 
 BRIDGE_PID="$HOME/.local/state/optimouse/bridge.pid"
