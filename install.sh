@@ -93,7 +93,7 @@ active_bridge() {
   local pid
   pid=$(cat "$BRIDGE_PID" 2>/dev/null) || return 1
   [[ "$pid" =~ ^[0-9]+$ && -r "/proc/$pid/cmdline" ]] || return 1
-  tr '\\0' ' ' < "/proc/$pid/cmdline" | grep -q "cursor-bridge.py"
+  tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q "cursor-bridge.py"
 }
 for i in 1 2 3 4 5; do
   if active_bridge; then
