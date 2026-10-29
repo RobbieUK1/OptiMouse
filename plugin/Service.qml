@@ -16,12 +16,12 @@ Item {
   id: root
 
   readonly property string pluginId: "io.github.robbieuk1.optimouse-shake"
-  readonly property string shellConfigPath: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+  readonly property string shellConfigPath: Quickshell.env("HOME") + "/.config/optimouse/settings.json"
   readonly property string bridgePath: decodeURIComponent(
     String(Qt.resolvedUrl("cursor-bridge.py")).replace(/^file:\/\//, ""))
 
-  // Settings. Defaults below; overridden by this plugin's entry in
-  // ~/.config/omarchy/shell.json (hot-reloaded), which the bar widget edits.
+  // Settings are read from ~/.config/optimouse/settings.json,
+  // updated by the OptiMouse GTK settings app.
   property bool shakeEnabled: true
   property bool followTheme: true
   property string selectedColor: "#71FACC"
@@ -88,27 +88,27 @@ Item {
   function applySettings(raw) {
     var entry
     try {
-      entry = root.findEntry(JSON.parse(String(raw || "{}")))
+      entry = JSON.parse(String(raw || "{}"))
     } catch (error) {
       // Keep the current settings while shell.json is mid-edit.
       return
     }
 
-    root.baseSize = Math.round(root.numberSetting(entry, "baseSize", root.environmentSize(), 8, 256))
-    root.maxSize = Math.round(root.numberSetting(entry, "maxSize", 96, root.baseSize, 256))
+    root.baseSize = Math.round(root.numberSetting(entry, "size", root.environmentSize(), 8, 256))
+    root.maxSize = Math.round(root.numberSetting(entry, "shake_max", 160, root.baseSize, 256))
     root.sensitivity = root.numberSetting(entry, "sensitivity", 2.5, 1.5, 10)
     root.growMs = Math.round(root.numberSetting(entry, "growMs", 300, 16, 5000))
     root.holdMs = Math.round(root.numberSetting(entry, "holdMs", 500, 0, 10000))
     root.shrinkMs = Math.round(root.numberSetting(entry, "shrinkMs", 350, 16, 5000))
-    root.shakeEnabled = entry.shakeEnabled === undefined ? true : Boolean(entry.shakeEnabled)
-    root.followTheme = entry.followTheme === undefined ? true : Boolean(entry.followTheme)
-    var chosen = String(entry.selectedColor || "#71FACC")
+    root.shakeEnabled = entry.shake === undefined ? false : Boolean(entry.shake)
+    root.followTheme = entry.follow_theme === undefined ? true : Boolean(entry.follow_theme)
+    var chosen = String(entry.color || "#71FACC")
     root.selectedColor = /^#[0-9A-Fa-f]{6}$/.test(chosen) ? chosen : "#71FACC"
     if (!root.followTheme) {
       root.cursorFill = root.selectedColor
       root.cursorStroke = "#121c18"
     } else root.refreshCursorColors()
-    var nextPreview = String(entry.previewToken || "")
+    var nextPreview = String(entry.preview_token || "")
     if (nextPreview !== "" && nextPreview !== root.lastPreviewToken) {
       root.lastPreviewToken = nextPreview
       root.preview()
