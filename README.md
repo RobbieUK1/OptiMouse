@@ -12,7 +12,7 @@ Close OptiMouse before updating. Launch **OptiMouse** from the Omarchy applicati
 
 ## Controls
 
-- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor. After Apply, OptiMouse briefly hides and restores the compositor cursor to request an immediate redraw, using the same refresh mechanism as the working Preview function. It does not move the pointer between monitors.
+- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor. After Apply, OptiMouse requests the existing Shake Preview animation through its running Quickshell service, since that is the only refresh path confirmed to redraw the new cursor immediately on the target machine. A short enlargement animation will play after applying settings; it doesn't move the pointer between monitors.
 - **Colour picker:** Always controls the enlarged shake pointer's outline. With **Follow Omarchy desktop cursor style** switched off, it also generates a recoloured XCursor theme for the normal pointer.
 - **Follow Omarchy cursor style:** Attempts to select the currently installed session cursor theme rather than an OptiMouse-generated colour theme. Theme changes made later by other desktop tools are not automatically detected by the GTK app.
 - **Shake to find:** Enable the switch and click Apply. The integrated Quickshell service draws a **temporary, smooth vector pointer overlay** (32–256 px) that grows with shaking, holds briefly, and shrinks. Its *outline* always follows the selected OptiMouse colour, with a contrast-aware black/white body. It uses a cursor bridge and no repeated `hyprctl setcursor` calls during animation.
@@ -31,7 +31,7 @@ The installer creates:
 - `~/.local/share/applications/optimouse.desktop` (application menu entry)
 - `~/.config/optimouse/settings.json` (settings; preserved across upgrades)
 
-Note: The refresh uses Hyprland's `cursor.invisible` setting, briefly switching it on and back off with a guaranteed restore attempt. If Hyprland refuses the visibility commands, use Preview as a manual refresh; some application-owned cursors may still redraw differently.
+Note: OptiMouse no longer issues a separate hide/show pair from the GTK app to refresh the normal cursor, because that approach did not resolve the delayed colour change. Instead Apply sends the same `preview_token` request as the confirmed-working Preview button. If the overlay is unavailable, Apply still saves normal cursor settings; the user can retry Preview later.
 
 The cursor persistence file is `~/.local/state/omarchy/toggles/hypr/zz-optimouse.lua`, following the approach used by [oxhenri.mouse](https://github.com/Dev-Herni/oxhenri.mouse). It doesn't edit Omarchy's main Hyprland config or Omarchroma's files.
 
