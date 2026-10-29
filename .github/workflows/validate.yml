@@ -27,5 +27,10 @@ jobs:
           for required in ('settings.json','preview_token','shake_max','follow_theme','CursorArrow','cursor hide'):
               assert required in service, required
           assert "omarchroma" not in Path("optimouse.py").read_text().lower()
+          installer=Path("install.sh").read_text()
+          assert 'omarchy plugin enable "$PLUGIN_ID"' in installer
+          assert 'omarchy plugin enable "$PLUGIN_ID" --yes' not in installer
+          assert 'omarchy plugin list --json' in installer
+          assert '.enabled == true' in installer
           print("Static checks passed.")
           PY
