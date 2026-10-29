@@ -148,40 +148,6 @@ def checked(command,label):
         raise RuntimeError(label+': '+(result.stderr.strip() or result.stdout.strip() or 'command failed'))
     return result
 
-def refresh_cursor_visibility():
-    """Refresh an existing cursor surface without moving the mouse.
-
-    Preview already demonstrates that hiding and restoring Hyprland's cursor
-    causes the new theme to appear. Use the same compositor setting here, but
-    without the enlarged-pointer overlay or any pointer movement. Always send
-    'show' even if hiding failed, to avoid leaving the cursor invisible.
-    """
-    hide=['hyprctl','eval','hl.config({ cursor = { invisible = true } })']
-    show=['hyprctl','eval','hl.config({ cursor = { invisible = false } })']
-    hidden=False
-    restored=False
-    try:
-        try:
-            result=run(hide)
-            hidden=(result.returncode==0 and
-                    not result.stdout.strip().lower().startswith('error'))
-            if hidden:
-                time.sleep(0.08)
-        finally:
-            # In particular, do not strand the pointer in invisible mode.
-            for attempt in range(2):
-                try:
-                    result=run(show)
-                    if result.returncode==0 and not result.stdout.strip().lower().startswith('error'):
-                        restored=True
-                        break
-                except (OSError,subprocess.TimeoutExpired):
-                    pass
-                time.sleep(0.04)
-    except (OSError,subprocess.TimeoutExpired):
-        return False
-    return hidden and restored
-
 def apply(data):
     size=max(16,min(128,int(data['size'])))
     follow=bool(data['follow_theme'])
@@ -196,9 +162,16 @@ def apply(data):
     if shutil.which('gsettings'):
         checked(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme],'GTK cursor theme')
         checked(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)],'GTK cursor size')
-    refreshed=refresh_cursor_visibility()
+    # Preview is the one confirmed refresh path on this Hyprland build:
+    # the Quickshell overlay maps, hides the compositor pointer and restores
+    # it at the end. Request that exact existing Preview sequence after
+    # setcursor/reload/gsettings have completed, instead of issuing separate
+    # hyprctl eval or moving the pointer between monitors.
+    if overlay_running():
+        write_settings({**data, 'preview_token':str(time.time_ns())})
+        return theme,True
     write_settings(data)
-    return theme,refreshed
+    return theme,False
 
 def overlay_running():
     """Check that the Quickshell service actually started its cursor bridge."""
@@ -346,7 +319,7 @@ def gui():
         def worker():
             try:
                 theme,refreshed=apply(options)
-                message='Applied '+theme+' at '+str(options['size'])+' px. '+('Pointer redraw requested. ' if refreshed else 'Pointer redraw unavailable; use Preview if needed. ')+'Shake overlay: '+(
+                message='Applied '+theme+' at '+str(options['size'])+' px. '+('Pointer preview triggered to refresh the colour. ' if refreshed else 'Overlay unavailable; use Preview when it starts. ')+'Shake overlay: '+(
                          'enabled' if options['shake'] else 'disabled')+'.'
                 if not PLUGIN_DIR.exists():
                     message+=' Shake overlay is not installed; run the updated installer.'
