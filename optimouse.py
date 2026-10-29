@@ -12,7 +12,7 @@ PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
 BRIDGE_PID=HOME/'.local/state/optimouse/bridge.pid'
-APP_VERSION='0.2.3'
+APP_VERSION='0.2.4'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
@@ -296,9 +296,48 @@ def gui():
     follow.set_active(initial['follow_theme'])
     normal.pack_start(follow,False,False,0)
     color_row=Gtk.Box(spacing=12)
-    chooser=Gtk.ColorButton()
-    rgba=Gdk.RGBA();rgba.parse(initial['color'])
-    chooser.set_rgba(rgba)
+    # Gtk.ColorButton creates its own popup, which has been positioned at the
+    # desktop's top-left on this Hyprland setup. Use a regular button and an
+    # explicitly parented, modal chooser dialog instead.
+    colour_state={'rgba':Gdk.RGBA()}
+    colour_state['rgba'].parse(initial['color'])
+    chooser=Gtk.Button()
+    chooser.set_tooltip_text('Choose pointer colour')
+    chooser_contents=Gtk.Box(spacing=8)
+    swatch=Gtk.DrawingArea()
+    swatch.set_size_request(54,28)
+    chooser_contents.pack_start(swatch,False,False,0)
+    chooser_contents.pack_start(Gtk.Label(label='Choose…'),False,False,0)
+    chooser.add(chooser_contents)
+
+    def draw_swatch(widget,cr):
+        allocation=widget.get_allocation()
+        cr.set_source_rgb(0.15,0.20,0.18)
+        cr.rectangle(0,0,allocation.width,allocation.height)
+        cr.fill()
+        Gdk.cairo_set_source_rgba(cr,colour_state['rgba'])
+        cr.rectangle(2,2,max(0,allocation.width-4),max(0,allocation.height-4))
+        cr.fill()
+        return False
+
+    swatch.connect('draw',draw_swatch)
+
+    def choose_colour(*_):
+        dialog=Gtk.ColorChooserDialog(title='Choose pointer colour')
+        dialog.set_transient_for(win)
+        dialog.set_modal(True)
+        dialog.set_destroy_with_parent(True)
+        dialog.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
+        dialog.set_use_alpha(False)
+        dialog.set_rgba(colour_state['rgba'])
+        try:
+            if dialog.run()==Gtk.ResponseType.OK:
+                colour_state['rgba']=dialog.get_rgba()
+                swatch.queue_draw()
+        finally:
+            dialog.destroy()
+
+    chooser.connect('clicked',choose_colour)
     color_row.pack_start(chooser,False,False,0)
     color_row.pack_start(label('Pointer colour / enlarged pointer outline'),True,True,0)
     normal.pack_start(color_row,False,False,0)
@@ -356,7 +395,7 @@ def gui():
     root.pack_end(breakdown,False,False,3)
 
     def collect():
-        c=chooser.get_rgba()
+        c=colour_state['rgba']
         color='#%02X%02X%02X'%(round(c.red*255),round(c.green*255),round(c.blue*255))
         return {**read_settings(),'size':int(size.get_value()),'color':color,
                 'follow_theme':follow.get_active(),'shake':shake.get_active(),
@@ -425,8 +464,8 @@ def gui():
         shake.set_active(DEFAULT['shake'])
         shake_max.set_value(DEFAULT['shake_max'])
         sensitivity.set_active(1)
-        rgba.parse(DEFAULT['color'])
-        chooser.set_rgba(rgba)
+        colour_state['rgba'].parse(DEFAULT['color'])
+        swatch.queue_draw()
         status.set_text('Defaults selected. Press Apply settings to save.')
 
     apply_btn.connect('clicked',apply_clicked)
