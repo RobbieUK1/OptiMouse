@@ -26,6 +26,10 @@ python3 -m py_compile "$STAGING/plugin/cursor-bridge.py"
 python3 -m json.tool "$STAGING/plugin/manifest.json" >/dev/null
 
 mkdir -p "$APP" "$HOME/.config/omarchy/plugins" "$HOME/.local/share/applications"
+mkdir -p "$HOME/.config/optimouse"
+if [[ ! -e "$HOME/.config/optimouse/settings.json" ]]; then
+  printf '%s\n' '{"size":32,"color":"#71FACC","follow_theme":true,"shake":false,"shake_scale":2.2,"shake_max":160,"sensitivity":2.5}' > "$HOME/.config/optimouse/settings.json"
+fi
 # Preserve user cursor preferences; only application and plugin files are updated.
 install -m755 "$STAGING/optimouse.py" "$APP/optimouse.py"
 mkdir -p "$APP/plugin"
