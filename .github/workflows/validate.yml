@@ -13,13 +13,15 @@ jobs:
         run: python3 -m py_compile optimouse.py plugin/cursor-bridge.py
       - name: Verify application version and standalone timing label
         run: |
-          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.1'
+          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.2'
           python3 - <<'PY'
           from pathlib import Path
           source=Path('optimouse.py').read_text()
           assert "timing.set_text(f'Apply time: {seconds:.2f} s')" in source
           assert "status.set_max_width_chars(66)" in source
-          assert "GLib.idle_add(finish,message,time.monotonic()-started)" in source
+          assert "GLib.idle_add(finish,message,time.monotonic()-started,phases)" in source
+          assert "breakdown.set_text(" in source
+          assert "source_signature(" in source
           print('Apply timing visibility checks passed.')
           PY
       - name: Validate installer
@@ -70,7 +72,8 @@ jobs:
               result=app.apply(opts)
               assert checked.call_args_list[0].args[0]==["hyprctl","setcursor","OptiMouse-71FACC","48"]
               assert sum(1 for c in checked.call_args_list if c.args[0][0]=="hyprctl")==1
-              assert result==("OptiMouse-71FACC",True)
+              assert result[:2]==("OptiMouse-71FACC",True)
+              assert all(key in result[2] for key in ("theme","save","hyprland","gtk","preview"))
               saved=save.call_args.args[0]
               assert saved["preview_token"]=="123456789000000"
               assert saved["size"]==48 and saved["color"]=="#71FACC"
@@ -80,8 +83,28 @@ jobs:
               stack.enter_context(patch.object(app,"overlay_running",return_value=False))
               save=stack.enter_context(patch.object(app,"write_settings"))
               result=app.apply(opts)
-              assert result==("OptiMouse-71FACC",False)
+              assert result[:2]==("OptiMouse-71FACC",False)
               assert save.call_args.args[0]==opts
+          # A previously generated colour should reuse its complete theme.
+          from tempfile import TemporaryDirectory
+          with TemporaryDirectory() as temp:
+              from pathlib import Path
+              source=Path(temp)/"source"
+              source.mkdir()
+              (source/"left_ptr").write_bytes(b"base-data")
+              target=Path(temp)/"icons"
+              target.mkdir()
+              with patch.object(app,"ICONS",target), patch.object(app,"base_theme",return_value=source):
+                  with patch.object(app,"tint_xcursor",side_effect=lambda raw,rgb: b"tinted:"+raw) as tint:
+                      assert app.create_theme("#AABBCC")=="OptiMouse-AABBCC"
+                      assert (target/"OptiMouse-AABBCC"/"cursors"/"left_ptr").read_bytes()==b"tinted:base-data"
+                      assert tint.call_count==1
+                      assert app.create_theme("#AABBCC")=="OptiMouse-AABBCC"
+                      assert tint.call_count==1, "Existing colour unexpectedly regenerated"
+                      (source/"left_ptr").write_bytes(b"updated-cursor-content")
+                      assert app.create_theme("#AABBCC")=="OptiMouse-AABBCC"
+                      assert tint.call_count==2, "Modified base cursor was not regenerated"
+          print("Cursor colour cache and source-change invalidation passed.")
           assert "refresh_cursor_visibility" not in Path("optimouse.py").read_text()
           assert "refresh_cursor_across_outputs" not in Path("optimouse.py").read_text()
           print("Apply dispatches existing Preview path after cursor settings are applied.")
