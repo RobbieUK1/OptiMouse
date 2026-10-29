@@ -455,41 +455,55 @@ def gui():
             'Custom mode: this colour controls the normal pointer and shake outline.')
     follow.connect('toggled',sync_color)
     sync_color()
-    preparation=label('Colour preparation: not started', 'hint')
+    preparation=label('Cursor artwork: not prepared', 'hint')
     preparation.set_line_wrap(True)
     normal.pack_start(preparation,False,False,0)
-    preloader={'request':0}
+    preloader={'request':0,'timer':None}
 
     def staged_colour():
         c=colour_state['rgba']
         return '#%02X%02X%02X'%(round(c.red*255),round(c.green*255),round(c.blue*255))
 
     def queue_colour_preload(*_):
+        # Debounce the size slider while dragging; the most recent request
+        # wins. Preparation builds files but never calls hyprctl or gsettings.
         preloader['request']+=1
         request=preloader['request']
-        if follow.get_active():
-            preparation.set_text('Follow theme: colour staged for enlarged pointer. Apply to save.')
-            return
-        colour=staged_colour()
-        preparation.set_text('Preparing '+colour+' in background…')
+        if preloader['timer'] is not None:
+            GLib.source_remove(preloader['timer'])
+            preloader['timer']=None
+        options={'size':int(size.get_value()),
+                 'follow_theme':bool(follow.get_active()),
+                 'color':staged_colour()}
+        preparation.set_text('Preparing '+str(options['size'])+' px cursor artwork…')
 
-        def worker():
-            try:
-                prepare_custom_theme(colour)
-                outcome='Ready: '+colour+' — press Apply to change the pointer.'
-            except Exception as error:
-                outcome='Preparation failed: '+str(error)
+        def begin():
+            preloader['timer']=None
 
-            def show_result():
-                if request==preloader['request'] and not follow.get_active():
-                    preparation.set_text(outcome)
-                return False
+            def worker():
+                try:
+                    _theme,has_size=prepare_cursor_choice(options)
+                    if has_size:
+                        message='Ready: '+str(options['size'])+' px artwork — press Apply.'
+                    else:
+                        message='Theme has no XCursor artwork; native resizing may remain limited.'
+                except Exception as error:
+                    message='Preparation failed: '+str(error)
 
-            GLib.idle_add(show_result)
+                def finish():
+                    if request==preloader['request']:
+                        preparation.set_text(message)
+                    return False
 
-        threading.Thread(target=worker,daemon=True).start()
+                GLib.idle_add(finish)
+
+            threading.Thread(target=worker,daemon=True).start()
+            return False
+
+        preloader['timer']=GLib.timeout_add(180,begin)
 
     follow.connect('toggled',queue_colour_preload)
+    size.connect('value-changed',queue_colour_preload)
 
     shake_card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10)
     shake_card.get_style_context().add_class('card')
@@ -569,6 +583,8 @@ def gui():
             try:
                 theme,refreshed,phases=apply(options)
                 message=f'Applied {theme} at {options["size"]} px.'
+                if not phases.get('resized'):
+                    message+=' Current theme could not provide native sized artwork.'
                 if refreshed:
                     message+=' Pointer refresh requested.'
                 else:
