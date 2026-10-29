@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """OptiMouse: cursor accessibility settings for Omarchy/Hyprland."""
-import hashlib, json, os, re, shutil, struct, subprocess, sys, time, tempfile
+import hashlib, json, os, re, shutil, struct, subprocess, sys, time, tempfile, threading
 from pathlib import Path
 
 HOME=Path.home()
@@ -12,7 +12,7 @@ PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
 BRIDGE_PID=HOME/'.local/state/optimouse/bridge.pid'
-APP_VERSION='0.2.5'
+APP_VERSION='0.2.6'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
@@ -150,6 +150,14 @@ def create_theme(color):
     return target.name
 
 
+_THEME_BUILD_LOCK=threading.Lock()
+
+def prepare_custom_theme(color):
+    """Build cursor files without changing active desktop settings."""
+    with _THEME_BUILD_LOCK:
+        return create_theme(color)
+
+
 def current_theme():
     for k in ('HYPRCURSOR_THEME','XCURSOR_THEME'):
         v=os.environ.get(k)
@@ -219,7 +227,7 @@ def apply(data):
     checkpoint=time.monotonic()
     size=max(16,min(128,int(data['size'])))
     follow=bool(data['follow_theme'])
-    theme=desktop_theme() if follow else create_theme(data['color'])
+    theme=desktop_theme() if follow else prepare_custom_theme(data['color'])
     phases['theme']=time.monotonic()-checkpoint
     if not shutil.which('hyprctl'):
         raise RuntimeError('hyprctl is unavailable')
