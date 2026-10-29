@@ -1,0 +1,31 @@
+name: OptiMouse validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Python
+        run: python3 -m py_compile optimouse.py plugin/cursor-bridge.py
+      - name: Validate installer
+        run: bash -n install.sh
+      - name: Validate plugin manifest
+        run: python3 -m json.tool plugin/manifest.json
+      - name: Check expected service wiring
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path("plugin/manifest.json").read_text())
+          assert manifest["entryPoints"]["service"]=="Service.qml"
+          assert manifest["id"]=="io.github.robbieuk1.optimouse-shake"
+          service=Path("plugin/Service.qml").read_text()
+          for required in ('settings.json','preview_token','shake_max','follow_theme','CursorArrow','cursor hide'):
+              assert required in service, required
+          assert "omarchroma" not in Path("optimouse.py").read_text().lower()
+          print("Static checks passed.")
+          PY
