@@ -2,6 +2,8 @@
 # Install OptiMouse and its Quickshell shake overlay, without changing Omarchy's main config.
 set -euo pipefail
 BASE="https://raw.githubusercontent.com/RobbieUK1/OptiMouse/main"
+# Use a fresh query for each install to avoid stale raw GitHub CDN responses.
+CACHE_BUST="$(date +%s%N)"
 APP="$HOME/.local/share/optimouse"
 PLUGIN_ID="io.github.robbieuk1.optimouse-shake"
 PLUGIN_LINK="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
@@ -16,11 +18,11 @@ if ! command -v python3 >/dev/null || ! python3 -c 'import gi; gi.require_versio
 fi
 
 echo "Downloading OptiMouse and shake overlay…"
-curl -fsSL "$BASE/optimouse.py" -o "$STAGING/optimouse.py"
+curl -fsSL "$BASE/optimouse.py?install=$CACHE_BUST" -o "$STAGING/optimouse.py"
 python3 -m py_compile "$STAGING/optimouse.py" || { echo "Python syntax check failed; old installation untouched." >&2; exit 1; }
 mkdir -p "$STAGING/plugin"
 for file in manifest.json Service.qml CursorArrow.qml cursor-bridge.py LICENSE; do
-  curl -fsSL "$BASE/plugin/$file" -o "$STAGING/plugin/$file"
+  curl -fsSL "$BASE/plugin/$file?install=$CACHE_BUST" -o "$STAGING/plugin/$file"
 done
 python3 -m py_compile "$STAGING/plugin/cursor-bridge.py"
 python3 -m json.tool "$STAGING/plugin/manifest.json" >/dev/null
