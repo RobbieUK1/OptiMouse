@@ -175,7 +175,6 @@ def gui():
     import gi
     gi.require_version('Gtk','3.0')
     from gi.repository import Gtk,Gdk,GLib
-    import threading,GLib
     import threading
     data=read_settings()
     win=Gtk.Window(title='OptiMouse')
