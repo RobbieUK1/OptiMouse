@@ -95,6 +95,8 @@ def apply(data, persist=True):
                            f'env = XCURSOR_SIZE,{size}\n'
                            f'env = HYPRCURSOR_THEME,{theme}\n'
                            f'env = HYPRCURSOR_SIZE,{size}\n')
+    if not shutil.which('hyprctl'):
+        raise RuntimeError('hyprctl is missing')
     if shutil.which('hyprctl'):
         result=run(['hyprctl','setcursor',theme,str(size)])
         if result.returncode:
@@ -103,7 +105,9 @@ def apply(data, persist=True):
         run(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme])
         run(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)])
     if shutil.which('systemctl') and persist:
-        run(['systemctl','--user','enable','--now','optimouse-shake.service']) if data['shake'] else run(['systemctl','--user','disable','--now','optimouse-shake.service'])
+        service=run(['systemctl','--user','enable','--now','optimouse-shake.service']) if data['shake'] else run(['systemctl','--user','disable','--now','optimouse-shake.service'])
+        if service.returncode:
+            raise RuntimeError('Shake helper: '+service.stderr.strip())
     return theme
 
 def daemon():
@@ -115,7 +119,7 @@ def daemon():
         config=read_settings()
         if not config['shake']: return
         try:
-            r=run(['hyprctl','cursorpos','-j'])
+            r=run(['hyprctl','-j','cursorpos'])
             pos=json.loads(r.stdout)
             x=float(pos['x'])
             now=time.monotonic()
@@ -156,6 +160,7 @@ def gui():
     import gi
     gi.require_version('Gtk','3.0')
     from gi.repository import Gtk,Gdk,GLib
+    import threading,GLib
     import threading
     data=read_settings()
     win=Gtk.Window(title='OptiMouse')
@@ -216,20 +221,23 @@ def gui():
         new={'size':int(size.get_value()),'color':color,'follow_theme':follow.get_active(),'shake':shake.get_active(),'shake_scale':2.2}
         apply_btn.set_sensitive(False)
         apply_btn.set_label('Applying…')
-        set_status('Applying pointer settings…')
-        def finish(message, success):
+        set_status('Applying changes to Hyprland…')
+        def complete(message, ok):
             apply_btn.set_sensitive(True)
             apply_btn.set_label('Apply settings')
             set_status(message)
+            dialog=Gtk.MessageDialog(transient_for=win,flags=0,message_type=Gtk.MessageType.INFO if ok else Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text='OptiMouse: '+('Settings applied' if ok else 'Could not apply settings'))
+            dialog.format_secondary_text(message)
+            dialog.run()
+            dialog.destroy()
             return False
         def worker():
             try:
                 theme=apply(new)
                 write_settings(new)
-                msg='✓ Applied: '+theme+' / '+str(new['size'])+' px. Some apps may need restarting.'
-                GLib.idle_add(finish,msg,True)
-            except Exception as e:
-                GLib.idle_add(finish,'Unable to apply: '+str(e),False)
+                GLib.idle_add(complete,'Hyprland accepted '+theme+' at '+str(new['size'])+' px. Existing application cursors may require restart.',True)
+            except Exception as exc:
+                GLib.idle_add(complete,str(exc),False)
         threading.Thread(target=worker,daemon=True).start()
     def reset_click(*_):
         size.set_value(DEFAULT['size']); follow.set_active(True);shake.set_active(False)
@@ -239,6 +247,12 @@ def gui():
     win.show_all();Gtk.main()
 
 if __name__=='__main__':
-    if len(sys.argv)>1 and sys.argv[1]=='--shake-daemon': daemon()
+    if len(sys.argv)>1 and sys.argv[1]=='--diagnose':
+        for cmd in (['hyprctl','version'],['hyprctl','-j','cursorpos'],['systemctl','--user','status','optimouse-shake.service']):
+            try:
+                result=run(cmd)
+                print(' '.join(cmd), 'exit', result.returncode, result.stdout[:600], result.stderr[:300])
+            except Exception as exc: print(str(exc))
+    elif len(sys.argv)>1 and sys.argv[1]=='--shake-daemon': daemon()
     elif len(sys.argv)>1 and sys.argv[1]=='--apply': apply(read_settings())
     else: gui()
