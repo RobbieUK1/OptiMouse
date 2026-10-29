@@ -26,6 +26,7 @@ Item {
   property bool followTheme: true
   property string selectedColor: "#71FACC"
   property string lastPreviewToken: ""
+  property bool settingsLoaded: false
   property int maxSize: 96
   property real sensitivity: 2.5
   property int growMs: 300
@@ -109,7 +110,10 @@ Item {
       root.cursorStroke = "#121c18"
     } else root.refreshCursorColors()
     var nextPreview = String(entry.preview_token || "")
-    if (nextPreview !== "" && nextPreview !== root.lastPreviewToken) {
+    if (!root.settingsLoaded) {
+      root.lastPreviewToken = nextPreview
+      root.settingsLoaded = true
+    } else if (nextPreview !== "" && nextPreview !== root.lastPreviewToken) {
       root.lastPreviewToken = nextPreview
       root.preview()
     }
