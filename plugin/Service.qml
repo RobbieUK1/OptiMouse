@@ -113,6 +113,11 @@ Item {
     if (!root.settingsLoaded) {
       root.lastPreviewToken = nextPreview
       root.settingsLoaded = true
+      // The service may load *after* the GTK Preview click. Accept a token
+      // issued in the last ten seconds, but ignore stale startup requests.
+      var ageMs = Date.now() - Number(nextPreview) / 1000000
+      if (nextPreview !== "" && isFinite(ageMs) && ageMs >= -1000 && ageMs < 10000)
+        root.preview()
     } else if (nextPreview !== "" && nextPreview !== root.lastPreviewToken) {
       root.lastPreviewToken = nextPreview
       root.preview()
@@ -309,7 +314,17 @@ Item {
     onTriggered: bridge.running = true
   }
 
+  // Safeguard against missed filesystem watcher events (including atomic
+  // rename updates). This reads only a tiny user settings file.
+  Timer {
+    interval: 500
+    repeat: true
+    running: true
+    onTriggered: settingsFile.reload()
+  }
+
   FileView {
+    id: settingsFile
     path: root.shellConfigPath
     watchChanges: true
     printErrors: false
