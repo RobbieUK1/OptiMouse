@@ -13,7 +13,7 @@ jobs:
         run: python3 -m py_compile optimouse.py plugin/cursor-bridge.py
       - name: Verify application version and standalone timing label
         run: |
-          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.2'
+          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.3'
           python3 - <<'PY'
           from pathlib import Path
           source=Path('optimouse.py').read_text()
@@ -24,6 +24,8 @@ jobs:
           assert "source_signature(" in source
           print('Apply timing visibility checks passed.')
           PY
+      - name: Check optimized cursor pixels match original algorithm
+        run: python3 -m unittest discover -s tests -p 'test_tint.py' -v
       - name: Validate installer
         run: bash -n install.sh
       - name: Validate plugin manifest
