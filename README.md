@@ -12,13 +12,13 @@ Close OptiMouse before updating. Launch **OptiMouse** from the Omarchy applicati
 
 ## Controls
 
-- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor. After Apply, OptiMouse requests the existing Shake Preview animation through its running Quickshell service, since that is the only refresh path confirmed to redraw the new cursor immediately on the target machine. A short enlargement animation will play after applying settings; it doesn't move the pointer between monitors.
+- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor. After Apply, OptiMouse requests the existing Shake Preview animation through its running Quickshell service, since that is the only refresh path confirmed to redraw the new cursor immediately on the target machine. It now applies the cursor live with a single `hyprctl setcursor` call (no immediate compositor reload), and the fallback settings watcher checks every 100 ms instead of 500 ms. A brief enlargement animation will play after applying settings; it doesn't move the pointer between monitors.
 - **Colour picker:** Always controls the enlarged shake pointer's outline. With **Follow Omarchy desktop cursor style** switched off, it also generates a recoloured XCursor theme for the normal pointer.
 - **Follow Omarchy cursor style:** Attempts to select the currently installed session cursor theme rather than an OptiMouse-generated colour theme. Theme changes made later by other desktop tools are not automatically detected by the GTK app.
 - **Shake to find:** Enable the switch and click Apply. The integrated Quickshell service draws a **temporary, smooth vector pointer overlay** (32–256 px) that grows with shaking, holds briefly, and shrinks. Its *outline* always follows the selected OptiMouse colour, with a contrast-aware black/white body. It uses a cursor bridge and no repeated `hyprctl setcursor` calls during animation.
 - **Shake sensitivity:** Light, Medium, Hard.
 - **Preview enlarged pointer:** Triggers the overlay's grow/hold/shrink animation independently of shake detection, to help determine whether the service is working.
-- **Apply feedback:** In-window progress and results. No modal success dialogue.
+- **Apply feedback:** In-window progress, measured Apply completion time and results. No modal success dialogue.
 
 **Important:** Normal pointer size and shake overlay maximum size are *different controls*. The overlay provides reliable visual enlargement even where the native cursor theme cannot provide a large raster arrow.
 
