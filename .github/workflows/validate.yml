@@ -32,5 +32,19 @@ jobs:
           assert 'omarchy plugin enable "$PLUGIN_ID" --yes' not in installer
           assert 'omarchy plugin list --json' in installer
           assert '.enabled == true' in installer
+          assert "cursorStroke = root.selectedColor" in service
+          assert "root.cursorStroke = parts[2]" not in service
+          from importlib.util import module_from_spec, spec_from_file_location
+          spec=spec_from_file_location("optimouse",Path("optimouse.py"))
+          app=module_from_spec(spec)
+          spec.loader.exec_module(app)
+          monitors=[{"x":0,"y":0,"width":1920,"height":1080},
+                    {"x":1920,"y":0,"width":1280,"height":1024}]
+          assert app.cursor_refresh_target(monitors,(100,200))==(1925,200)
+          assert app.cursor_refresh_target(monitors,(2300,300))==(1914,300)
+          assert app.cursor_refresh_target(monitors[:1],(100,200)) is None
+          assert app.cursor_refresh_target(monitors,(5000,200)) is None
+          assert app.cursor_refresh_target(monitors,(1919,200))==(1925,200)
+          print("Cursor output refresh and shake colour checks passed.")
           print("Static checks passed.")
           PY
