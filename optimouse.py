@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """OptiMouse: cursor accessibility settings for Omarchy/Hyprland."""
-import json, os, re, shutil, struct, subprocess, sys, time
+import json, os, re, shutil, struct, subprocess, sys, time, tempfile
 from pathlib import Path
 
 HOME=Path.home()
@@ -8,8 +8,10 @@ CONFIG=HOME/'.config/optimouse'
 SETTINGS=CONFIG/'settings.json'
 ICONS=HOME/'.local/share/icons'
 HYPR=HOME/'.config/hypr'
-PERSIST=HYPR/'optimouse.conf'
-DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2}
+PERSIST=HOME/'.local/state/omarchy/toggles/hypr/optimouse.lua'
+PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
+PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
+DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
     return subprocess.run(args, capture_output=True, text=True, timeout=8, **kwargs)
@@ -20,7 +22,15 @@ def read_settings():
 
 def write_settings(data):
     CONFIG.mkdir(parents=True, exist_ok=True)
-    SETTINGS.write_text(json.dumps(data,indent=2)+'\n')
+    # Replace atomically so the Quickshell file watcher sees a complete JSON file.
+    payload=json.dumps(data,indent=2)+'\n'
+    fd,name=tempfile.mkstemp(prefix='.settings-',dir=CONFIG)
+    try:
+        with os.fdopen(fd,'w') as handle:
+            handle.write(payload)
+        os.replace(name,SETTINGS)
+    finally:
+        if os.path.exists(name): os.unlink(name)
 
 def base_theme():
     for name in ('Adwaita','default','Bibata-Modern-Classic','breeze_cursors'):
@@ -85,78 +95,75 @@ def current_theme():
     except (OSError,subprocess.TimeoutExpired): pass
     return 'Adwaita'
 
-def apply(data, persist=True):
+def is_generated(name):
+    return name.startswith('OptiMouse-')
+
+def desktop_theme():
+    # The session environment retains the original theme after gsettings
+    # is changed by OptiMouse. Prefer this over OptiMouse's own custom theme.
+    for key in ('HYPRCURSOR_THEME','XCURSOR_THEME'):
+        value=os.environ.get(key,'')
+        if value and not is_generated(value):
+            return value
+    return 'Adwaita'
+
+def persist_cursor(theme,size,follow):
+    PERSIST.parent.mkdir(parents=True,exist_ok=True)
+    if follow:
+        # Leave theme choice to Omarchy; retain just the requested size.
+        lines=[f'hl.env("HYPRCURSOR_SIZE", "{size}")',
+               f'hl.env("XCURSOR_SIZE", "{size}")']
+    else:
+        if not re.fullmatch(r'[A-Za-z0-9_.+-]{1,128}',theme):
+            raise ValueError('Invalid cursor theme name')
+        lines=[f'hl.env("HYPRCURSOR_THEME", "{theme}")',
+               f'hl.env("XCURSOR_THEME", "{theme}")',
+               f'hl.env("HYPRCURSOR_SIZE", "{size}")',
+               f'hl.env("XCURSOR_SIZE", "{size}")']
+    payload='-- OptiMouse cursor overrides; loaded by Omarchy toggles\n'+'\n'.join(lines)+'\n'
+    fd,name=tempfile.mkstemp(prefix='.optimouse-',dir=PERSIST.parent)
+    try:
+        with os.fdopen(fd,'w') as handle: handle.write(payload)
+        os.replace(name,PERSIST)
+    finally:
+        if os.path.exists(name): os.unlink(name)
+
+def checked(command,label):
+    result=run(command)
+    if result.returncode:
+        raise RuntimeError(label+': '+(result.stderr.strip() or result.stdout.strip() or 'command failed'))
+    return result
+
+def apply(data):
     size=max(16,min(128,int(data['size'])))
-    theme=current_theme() if data['follow_theme'] else create_theme(data['color'])
-    if persist:
-        HYPR.mkdir(parents=True,exist_ok=True)
-        PERSIST.write_text('# OptiMouse generated cursor settings\n'
-                           f'env = XCURSOR_THEME,{theme}\n'
-                           f'env = XCURSOR_SIZE,{size}\n'
-                           f'env = HYPRCURSOR_THEME,{theme}\n'
-                           f'env = HYPRCURSOR_SIZE,{size}\n')
+    follow=bool(data['follow_theme'])
+    theme=desktop_theme() if follow else create_theme(data['color'])
     if not shutil.which('hyprctl'):
-        raise RuntimeError('hyprctl is missing')
-    if persist and (HYPR/'hyprland.lua').is_file():
-        lua=HYPR/'hyprland.lua'
-        source=lua.read_text()
-        begin='-- OPTIMOUSE SETTINGS START'
-        end='-- OPTIMOUSE SETTINGS END'
-        block=(begin+'\n'+
-               'hl.env("XCURSOR_THEME", "'+theme+'")\n'+
-               'hl.env("XCURSOR_SIZE", "'+str(size)+'")\n'+
-               'hl.env("HYPRCURSOR_THEME", "'+theme+'")\n'+
-               'hl.env("HYPRCURSOR_SIZE", "'+str(size)+'")\n'+end)
-        if begin in source and end in source:
-            source=source[:source.index(begin)]+block+source[source.index(end)+len(end):]
-        else:
-            source=source.rstrip()+'\n\n'+block+'\n'
-        lua.write_text(source)
-    if shutil.which('hyprctl'):
-        result=run(['hyprctl','setcursor',theme,str(size)])
-        if result.returncode:
-            raise RuntimeError('Hyprland could not apply cursor: '+(result.stderr.strip() or result.stdout.strip()))
+        raise RuntimeError('hyprctl is unavailable')
+    # Omarchy's own toggle directory is sourced across Hyprland reloads.
+    persist_cursor(theme,size,follow)
+    checked(['hyprctl','setcursor',theme,str(size)],'Cursor apply')
+    checked(['hyprctl','reload'],'Hyprland reload')
+    checked(['hyprctl','setcursor',theme,str(size)],'Cursor refresh')
     if shutil.which('gsettings'):
-        run(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme])
-        run(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)])
-    if shutil.which('systemctl') and persist:
-        service=run(['systemctl','--user','enable','--now','optimouse-shake.service']) if data['shake'] else run(['systemctl','--user','disable','--now','optimouse-shake.service'])
-        if service.returncode:
-            raise RuntimeError('Shake helper: '+service.stderr.strip())
+        checked(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme],'GTK cursor theme')
+        checked(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)],'GTK cursor size')
+    write_settings(data)
     return theme
 
-def daemon():
-    from collections import deque
-    samples=deque(maxlen=18)
-    boosted_until=0.0
-    cooldown=0.0
-    while True:
-        config=read_settings()
-        if not config['shake']: return
+def diagnostics():
+    print('OptiMouse diagnostics; Hyprland 0.56')
+    for command in (['hyprctl','version'],['hyprctl','-j','cursorpos'],
+                    ['gsettings','get','org.gnome.desktop.interface','cursor-theme'],
+                    ['omarchy','plugin','list']):
         try:
-            r=run(['hyprctl','-j','cursorpos'])
-            pos=json.loads(r.stdout)
-            x=float(pos['x'])
-            now=time.monotonic()
-            samples.append((now,x))
-            while samples and now-samples[0][0]>1.2: samples.popleft()
-            if boosted_until and now>=boosted_until:
-                apply(config,persist=False)
-                boosted_until=0
-                samples.clear()
-            elif not boosted_until and now>cooldown and len(samples)>6:
-                deltas=[samples[i][1]-samples[i-1][1] for i in range(1,len(samples))]
-                strong=[d for d in deltas if abs(d)>12]
-                flips=sum(a*b<0 for a,b in zip(strong,strong[1:]))
-                travel=sum(abs(v) for v in strong)
-                if flips>=4 and travel>=350:
-                    theme=current_theme() if config['follow_theme'] else 'OptiMouse-'+config['color'].lstrip('#').upper()
-                    run(['hyprctl','setcursor',theme,str(min(256,round(config['size']*float(config.get('shake_scale',2.2)))))])
-                    boosted_until=now+1.5
-                    cooldown=now+3.0
-                    samples.clear()
-        except (OSError,ValueError,KeyError,subprocess.TimeoutExpired): pass
-        time.sleep(.09)
+            result=run(command)
+            print(' '.join(command), 'exit',result.returncode)
+            print(result.stdout[:900],result.stderr[:500])
+        except Exception as error: print(str(error))
+    print('Plugin path:',PLUGIN_DIR,'exists:',PLUGIN_DIR.exists())
+    print('Toggle path:',PERSIST,'exists:',PERSIST.exists())
+
 
 CSS='''
 window { background: #000000; color: #e7f5f0; }
@@ -176,97 +183,141 @@ def gui():
     gi.require_version('Gtk','3.0')
     from gi.repository import Gtk,Gdk,GLib
     import threading
-    data=read_settings()
+
+    initial=read_settings()
     win=Gtk.Window(title='OptiMouse')
-    win.set_default_size(560,580)
+    win.set_default_size(625,665)
     win.set_border_width(18)
     win.connect('destroy',Gtk.main_quit)
-    provider=Gtk.CssProvider(); provider.load_from_data(CSS.encode())
-    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(),provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-    root=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=14)
+    provider=Gtk.CssProvider()
+    provider.load_from_data(CSS.encode())
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(),provider,
+                                             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    root=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=12)
     win.add(root)
-    title=Gtk.Label(label='OptiMouse  •  Pointer accessibility',xalign=0)
-    title.get_style_context().add_class('heading'); root.pack_start(title,False,False,4)
-    card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=12)
-    card.get_style_context().add_class('card'); root.pack_start(card,False,False,0)
-    def label(t,css=None):
-        l=Gtk.Label(label=t,xalign=0)
-        if css:l.get_style_context().add_class(css)
-        return l
-    card.pack_start(label('Pointer size','heading'),False,False,0)
+
+    def label(value,style=None):
+        item=Gtk.Label(label=value,xalign=0)
+        if style: item.get_style_context().add_class(style)
+        return item
+
+    root.pack_start(label('OptiMouse  •  Pointer accessibility','heading'),False,False,2)
+    normal=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10)
+    normal.get_style_context().add_class('card')
+    root.pack_start(normal,False,False,0)
+    normal.pack_start(label('Normal pointer size','heading'),False,False,0)
     size=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,16,128,4)
-    size.set_digits(0);size.set_value(data['size'])
-    size.set_hexpand(True)
+    size.set_digits(0);size.set_value(initial['size'])
     size.set_value_pos(Gtk.PositionType.RIGHT)
-    card.pack_start(size,False,False,0)
-    follow=Gtk.CheckButton(label='Follow desktop theme cursor style')
-    follow.set_active(data['follow_theme'])
-    card.pack_start(follow,False,False,0)
-    card.pack_start(label('Pointer colour','heading'),False,False,0)
-    colors=Gtk.Box(spacing=10)
+    normal.pack_start(size,False,False,0)
+    follow=Gtk.CheckButton(label='Follow Omarchy desktop cursor style')
+    follow.set_active(initial['follow_theme'])
+    normal.pack_start(follow,False,False,0)
+    color_row=Gtk.Box(spacing=12)
     chooser=Gtk.ColorButton()
-    rgba=Gdk.RGBA();rgba.parse(data['color']);chooser.set_rgba(rgba)
-    colors.pack_start(chooser,False,False,0)
-    colors.pack_start(label('Choose a colour (custom cursor mode)'),True,True,0)
-    card.pack_start(colors,False,False,0)
-    info=label('Colour requires “Follow desktop theme” to be off.','hint')
-    card.pack_start(info,False,False,0)
-    def toggle_follow(*_): chooser.set_sensitive(not follow.get_active())
-    follow.connect('toggled',toggle_follow);toggle_follow()
-    card2=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=12)
-    card2.get_style_context().add_class('card');root.pack_start(card2,False,False,0)
-    card2.pack_start(label('Shake to find','heading'),False,False,0)
-    shake=Gtk.CheckButton(label='Enlarge pointer briefly when I shake the mouse')
-    shake.set_active(data['shake']);card2.pack_start(shake,False,False,0)
-    card2.pack_start(label('Works via a lightweight background service.','hint'),False,False,0)
-    status=label('', 'hint');status.set_line_wrap(True)
+    rgba=Gdk.RGBA();rgba.parse(initial['color'])
+    chooser.set_rgba(rgba)
+    color_row.pack_start(chooser,False,False,0)
+    color_row.pack_start(label('Custom pointer colour (when theme following is off)'),True,True,0)
+    normal.pack_start(color_row,False,False,0)
+    def sync_color(*_): chooser.set_sensitive(not follow.get_active())
+    follow.connect('toggled',sync_color)
+    sync_color()
+
+    shake_card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10)
+    shake_card.get_style_context().add_class('card')
+    root.pack_start(shake_card,False,False,0)
+    shake=Gtk.CheckButton(label='Shake to find — temporarily enlarge pointer')
+    shake.set_active(initial.get('shake',False))
+    shake_card.pack_start(shake,False,False,0)
+    shake_card.pack_start(label('Maximum shake pointer size','heading'),False,False,0)
+    shake_max=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,32,256,8)
+    shake_max.set_digits(0);shake_max.set_value(initial.get('shake_max',160))
+    shake_max.set_value_pos(Gtk.PositionType.RIGHT)
+    shake_card.pack_start(shake_max,False,False,0)
+    sensitivity_row=Gtk.Box(spacing=12)
+    sensitivity_row.pack_start(label('Shake sensitivity'),True,True,0)
+    sensitivity=Gtk.ComboBoxText()
+    for text in ('Light','Medium','Hard'): sensitivity.append_text(text)
+    levels=[2.0,2.5,3.5]
+    nearest=min(range(len(levels)),key=lambda i:abs(levels[i]-float(initial.get('sensitivity',2.5))))
+    sensitivity.set_active(nearest)
+    sensitivity_row.pack_end(sensitivity,False,False,0)
+    shake_card.pack_start(sensitivity_row,False,False,0)
+    preview=Gtk.Button(label='Preview enlarged pointer')
+    shake_card.pack_start(preview,False,False,0)
+
+    status=label('Ready. Use Apply settings to save cursor preferences.','hint')
+    status.set_line_wrap(True)
     root.pack_start(status,False,False,0)
     row=Gtk.Box(spacing=10)
     root.pack_end(row,False,False,0)
+    reset=Gtk.Button(label='Restore defaults')
+    row.pack_start(reset,False,False,0)
     apply_btn=Gtk.Button(label='Apply settings')
     apply_btn.get_style_context().add_class('suggested-action')
     row.pack_end(apply_btn,False,False,0)
-    reset=Gtk.Button(label='Restore defaults')
-    row.pack_start(reset,False,False,0)
-    def set_status(message): status.set_text(message)
-    def apply_click(*_):
+
+    def collect():
         c=chooser.get_rgba()
         color='#%02X%02X%02X'%(round(c.red*255),round(c.green*255),round(c.blue*255))
-        new={'size':int(size.get_value()),'color':color,'follow_theme':follow.get_active(),'shake':shake.get_active(),'shake_scale':2.2}
+        return {**read_settings(),'size':int(size.get_value()),'color':color,
+                'follow_theme':follow.get_active(),'shake':shake.get_active(),
+                'shake_max':int(shake_max.get_value()),
+                'sensitivity':levels[max(0,sensitivity.get_active())]}
+
+    def apply_clicked(*_):
+        options=collect()
         apply_btn.set_sensitive(False)
         apply_btn.set_label('Applying…')
-        set_status('Applying changes to Hyprland…')
-        def complete(message, ok):
-            apply_btn.set_sensitive(True)
+        status.set_text('Applying settings to Hyprland…')
+        def finish(message):
             apply_btn.set_label('Apply settings')
-            set_status(message)
-            dialog=Gtk.MessageDialog(transient_for=win,flags=0,message_type=Gtk.MessageType.INFO if ok else Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text='OptiMouse: '+('Settings applied' if ok else 'Could not apply settings'))
-            dialog.format_secondary_text(message)
-            dialog.run()
-            dialog.destroy()
+            apply_btn.set_sensitive(True)
+            status.set_text(message)
             return False
         def worker():
             try:
-                write_settings(new)
-                theme=apply(new)
-                GLib.idle_add(complete,'Hyprland accepted '+theme+' at '+str(new['size'])+' px. Existing application cursors may require restart.',True)
-            except Exception as exc:
-                GLib.idle_add(complete,str(exc),False)
+                theme=apply(options)
+                message='Applied '+theme+' at '+str(options['size'])+' px. Shake overlay: '+(
+                         'enabled' if options['shake'] else 'disabled')+'.'
+                if not PLUGIN_DIR.exists():
+                    message+=' Shake overlay is not installed; run the updated installer.'
+            except Exception as error:
+                message='Unable to apply: '+str(error)
+            GLib.idle_add(finish,message)
         threading.Thread(target=worker,daemon=True).start()
-    def reset_click(*_):
-        size.set_value(DEFAULT['size']); follow.set_active(True);shake.set_active(False)
-        rgba.parse(DEFAULT['color']);chooser.set_rgba(rgba)
-        set_status('Defaults selected. Press Apply settings to save.')
-    apply_btn.connect('clicked',apply_click);reset.connect('clicked',reset_click)
-    win.show_all();Gtk.main()
+
+    def preview_clicked(*_):
+        if not PLUGIN_DIR.exists():
+            status.set_text('Shake overlay is not installed. Run the updated one-line installer.')
+            return
+        options=collect()
+        options['preview_token']=str(time.time_ns())
+        try:
+            write_settings(options)
+            status.set_text('Preview requested — watch the pointer for the grow-and-shrink animation.')
+        except Exception as error:
+            status.set_text('Preview failed: '+str(error))
+
+    def reset_clicked(*_):
+        size.set_value(DEFAULT['size'])
+        follow.set_active(DEFAULT['follow_theme'])
+        shake.set_active(DEFAULT['shake'])
+        shake_max.set_value(DEFAULT['shake_max'])
+        sensitivity.set_active(1)
+        rgba.parse(DEFAULT['color'])
+        chooser.set_rgba(rgba)
+        status.set_text('Defaults selected. Press Apply settings to save.')
+
+    apply_btn.connect('clicked',apply_clicked)
+    preview.connect('clicked',preview_clicked)
+    reset.connect('clicked',reset_clicked)
+    win.show_all()
+    Gtk.main()
 
 if __name__=='__main__':
-    if len(sys.argv)>1 and sys.argv[1]=='--diagnose':
-        for cmd in (['hyprctl','version'],['hyprctl','-j','cursorpos'],['systemctl','--user','status','optimouse-shake.service']):
-            try:
-                result=run(cmd)
-                print(' '.join(cmd), 'exit', result.returncode, result.stdout[:600], result.stderr[:300])
-            except Exception as exc: print(str(exc))
-    elif len(sys.argv)>1 and sys.argv[1]=='--shake-daemon': daemon()
-    elif len(sys.argv)>1 and sys.argv[1]=='--apply': apply(read_settings())
+    if len(sys.argv)>1 and sys.argv[1]=='--diagnose': diagnostics()
+    elif len(sys.argv)>1 and sys.argv[1]=='--apply':
+        print('Applied cursor theme:',apply(read_settings()))
     else: gui()
