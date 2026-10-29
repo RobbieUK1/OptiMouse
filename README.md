@@ -18,7 +18,8 @@ Close OptiMouse before updating. Launch **OptiMouse** from the Omarchy applicati
 - **Shake to find:** Enable the switch and click Apply. The integrated Quickshell service draws a **temporary, smooth vector pointer overlay** (32–256 px) that grows with shaking, holds briefly, and shrinks. Its *outline* always follows the selected OptiMouse colour, with a contrast-aware black/white body. It uses a cursor bridge and no repeated `hyprctl setcursor` calls during animation.
 - **Shake sensitivity:** Light, Medium, Hard.
 - **Preview enlarged pointer:** Triggers the overlay's grow/hold/shrink animation independently of shake detection, to help determine whether the service is working.
-- **Apply feedback:** A prominent `Apply time: X.XX s` label beside the Apply button, concise status text that stays inside the window, and application version in the title. No modal success dialogue. You can check the installed version with `~/.local/share/optimouse/optimouse.py --version`.
+- **Colour-generation cache:** Once a colour has been generated, OptiMouse reuses its cursor files until the underlying source cursor theme changes. New colours still require a first-time generation.
+- **Apply feedback:** A prominent `Apply time: X.XX s` label beside the Apply button, with a breakdown for Theme, Save, Hyprland, GTK and Preview phases. This helps pinpoint slow operations without modifying Shake to Find. The application version is shown in the title. You can check the installed version with `~/.local/share/optimouse/optimouse.py --version`.
 
 **Important:** Normal pointer size and shake overlay maximum size are *different controls*. The overlay provides reliable visual enlargement even where the native cursor theme cannot provide a large raster arrow.
 
