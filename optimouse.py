@@ -12,6 +12,7 @@ PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
 BRIDGE_PID=HOME/'.local/state/optimouse/bridge.pid'
+APP_VERSION='0.2.1'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
@@ -219,7 +220,7 @@ def gui():
     import threading
 
     initial=read_settings()
-    win=Gtk.Window(title='OptiMouse')
+    win=Gtk.Window(title='OptiMouse '+APP_VERSION)
     win.set_default_size(625,665)
     win.set_border_width(18)
     win.connect('destroy',Gtk.main_quit)
@@ -235,7 +236,7 @@ def gui():
         if style: item.get_style_context().add_class(style)
         return item
 
-    root.pack_start(label('OptiMouse  •  Pointer accessibility','heading'),False,False,2)
+    root.pack_start(label('OptiMouse  •  Pointer accessibility   v'+APP_VERSION,'heading'),False,False,2)
     normal=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10)
     normal.get_style_context().add_class('card')
     root.pack_start(normal,False,False,0)
@@ -289,6 +290,8 @@ def gui():
 
     status=label('Ready. Use Apply settings to save cursor preferences.','hint')
     status.set_line_wrap(True)
+    # Prevent long GTK labels from asking for a window wider than the screen.
+    status.set_max_width_chars(66)
     root.pack_start(status,False,False,0)
     row=Gtk.Box(spacing=10)
     root.pack_end(row,False,False,0)
@@ -297,6 +300,9 @@ def gui():
     apply_btn=Gtk.Button(label='Apply settings')
     apply_btn.get_style_context().add_class('suggested-action')
     row.pack_end(apply_btn,False,False,0)
+    # Keep the diagnostic timing visible, not appended after a long line.
+    timing=label('Apply time: —','heading')
+    row.pack_end(timing,False,False,12)
 
     def collect():
         c=chooser.get_rgba()
@@ -308,29 +314,35 @@ def gui():
 
     def apply_clicked(*_):
         options=collect()
+        started=time.monotonic()
         apply_btn.set_sensitive(False)
         apply_btn.set_label('Applying…')
-        status.set_text('Applying settings to Hyprland…')
-        def finish(message):
+        timing.set_text('Apply time: measuring…')
+        status.set_text('Applying cursor settings…')
+
+        def finish(message,seconds):
             apply_btn.set_label('Apply settings')
             apply_btn.set_sensitive(True)
+            timing.set_text(f'Apply time: {seconds:.2f} s')
             status.set_text(message)
             return False
+
         def worker():
             try:
-                apply_start=time.monotonic()
                 theme,refreshed=apply(options)
-                apply_seconds=time.monotonic()-apply_start
-                message='Applied '+theme+' at '+str(options['size'])+' px. '+('Pointer preview triggered to refresh the colour. ' if refreshed else 'Overlay unavailable; use Preview when it starts. ')+'Shake overlay: '+(
-                         'enabled' if options['shake'] else 'disabled')+'.'
-                message+=f' Apply completed in {apply_seconds:.2f} seconds.'
+                message=f'Applied {theme} at {options["size"]} px.'
+                if refreshed:
+                    message+=' Pointer refresh requested.'
+                else:
+                    message+=' Overlay unavailable for refresh.'
                 if not PLUGIN_DIR.exists():
-                    message+=' Shake overlay is not installed; run the updated installer.'
+                    message+=' Shake overlay not installed.'
                 elif not overlay_running():
-                    message+=' Shake overlay is not active; restart the Omarchy shell.'
+                    message+=' Shake overlay not running.'
             except Exception as error:
                 message='Unable to apply: '+str(error)
-            GLib.idle_add(finish,message)
+            GLib.idle_add(finish,message,time.monotonic()-started)
+
         threading.Thread(target=worker,daemon=True).start()
 
     def preview_clicked(*_):
