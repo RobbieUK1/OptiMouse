@@ -13,7 +13,7 @@ jobs:
         run: python3 -m py_compile optimouse.py plugin/cursor-bridge.py
       - name: Verify application version and standalone timing label
         run: |
-          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.5'
+          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.6'
           python3 - <<'PY'
           from pathlib import Path
           source=Path('optimouse.py').read_text()
@@ -24,6 +24,10 @@ jobs:
           assert "source_signature(" in source
           assert "memoryview(data)[start:stop].cast('I')" in source
           assert "if sys.byteorder=='little':" in source
+          assert "def prepare_custom_theme(color):" in source
+          assert "threading.Lock()" in source
+          assert "queue_colour_preload()" in source
+          assert "sync_gtk_cursor_settings(theme,size)" in source
           # The previous self-managed Gtk.ColorButton popup could appear in
           # the screen's top-left on Hyprland. A transient modal dialog must
           # belong to the settings window and keep Cancel non-destructive.
@@ -37,8 +41,8 @@ jobs:
           assert "colour_state['rgba'].parse(DEFAULT['color'])" in source
           print('Apply timing visibility checks passed.')
           PY
-      - name: Check optimized cursor pixels match original algorithm
-        run: python3 -m unittest discover -s tests -p 'test_tint.py' -v
+      - name: Test optimized colour, preparation races and GTK settings
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Validate installer
         run: bash -n install.sh
       - name: Validate plugin manifest
@@ -73,6 +77,7 @@ jobs:
           def common_mocks():
               return [
                   patch.object(app, "create_theme", return_value="OptiMouse-71FACC"),
+                  patch.object(app, "sync_gtk_cursor_settings"),
                   patch.object(app, "persist_cursor"),
                   patch.object(app, "checked"),
                   patch.object(app.shutil, "which", return_value="/usr/bin/tool"),
