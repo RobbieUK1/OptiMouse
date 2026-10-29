@@ -215,6 +215,60 @@ def persist_cursor(theme,size,follow):
     finally:
         if os.path.exists(name): os.unlink(name)
 
+def update_gtk_settings_ini(content,theme,size):
+    """Update only GTK cursor keys, preserving unrelated settings and sections."""
+    keys=('gtk-cursor-theme-name','gtk-cursor-theme-size')
+    updates=('gtk-cursor-theme-name='+theme,'gtk-cursor-theme-size='+str(size))
+    lines=content.splitlines()
+    output=[]
+    inside=False
+    found=False
+    inserted=False
+    for line in lines:
+        stripped=line.strip()
+        if stripped.startswith('[') and stripped.endswith(']'):
+            if inside and not inserted:
+                output.extend(updates)
+                inserted=True
+            inside=stripped.lower()=='[settings]'
+            if inside:
+                found=True
+                inserted=False
+        if inside and any(stripped.startswith(key+'=') or
+                          stripped.startswith(key+' =') for key in keys):
+            continue
+        output.append(line)
+    if not found:
+        if output and output[-1].strip():
+            output.append('')
+        output.append('[Settings]')
+        output.extend(updates)
+    elif inside and not inserted:
+        output.extend(updates)
+    return '\\n'.join(output)+'\\n'
+
+def sync_gtk_cursor_settings(theme,size):
+    """Synchronise GTK3/GTK4 cursor settings without rewriting other options.
+
+    Oma Cursor Style also writes both settings.ini files. OptiMouse retains
+    its Omarchy toggle persistence rather than editing hyprland.lua itself.
+    """
+    for version in ('gtk-3.0','gtk-4.0'):
+        path=HOME/'.config'/version/'settings.ini'
+        original=path.read_text() if path.exists() else ''
+        updated=update_gtk_settings_ini(original,theme,size)
+        if updated==original:
+            continue
+        path.parent.mkdir(parents=True,exist_ok=True)
+        fd,temp_path=tempfile.mkstemp(prefix='.optimouse-gtk-',dir=path.parent)
+        try:
+            with os.fdopen(fd,'w') as handle:
+                handle.write(updated)
+            os.replace(temp_path,path)
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
 def checked(command,label):
     result=run(command)
     if result.returncode:
@@ -241,6 +295,7 @@ def apply(data):
     if shutil.which('gsettings'):
         checked(['gsettings','set','org.gnome.desktop.interface','cursor-theme',theme],'GTK cursor theme')
         checked(['gsettings','set','org.gnome.desktop.interface','cursor-size',str(size)],'GTK cursor size')
+    sync_gtk_cursor_settings(theme,size)
     phases['gtk']=time.monotonic()-checkpoint
     checkpoint=time.monotonic()
     # Reuse the already proven Shake Preview path. Do not change the shake
