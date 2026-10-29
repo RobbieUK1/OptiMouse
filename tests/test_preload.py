@@ -53,6 +53,7 @@ class PreparationTests(unittest.TestCase):
              patch.object(app,"checked"), \
              patch.object(app,"overlay_running",return_value=False), \
              patch.object(app,"write_settings"), \
+             patch.object(app,"sync_gtk_cursor_settings"), \
              patch.object(app.shutil,"which",return_value="/bin/tool"):
             theme,preview,timings=app.apply(opts)
         self.assertEqual(theme,"OptiMouse-123456")
