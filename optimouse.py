@@ -11,6 +11,7 @@ HYPR=HOME/'.config/hypr'
 PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
+BRIDGE_PID=HOME/'.local/state/optimouse/bridge.pid'
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
 
 def run(args, **kwargs):
@@ -164,6 +165,17 @@ def apply(data):
     write_settings(data)
     return theme
 
+def overlay_running():
+    """Check that the Quickshell service actually started its cursor bridge."""
+    try:
+        pid=int(BRIDGE_PID.read_text().strip())
+        if pid<=0:
+            return False
+        command=(Path('/proc')/str(pid)/'cmdline').read_bytes()
+        return b'cursor-bridge.py' in command
+    except (ValueError,OSError):
+        return False
+
 def diagnostics():
     print('OptiMouse diagnostics; Hyprland 0.56')
     for command in (['hyprctl','version'],['hyprctl','-j','cursorpos'],
@@ -175,6 +187,7 @@ def diagnostics():
             print(result.stdout[:900],result.stderr[:500])
         except Exception as error: print(str(error))
     print('Plugin path:',PLUGIN_DIR,'exists:',PLUGIN_DIR.exists())
+    print('Overlay bridge active:',overlay_running())
     print('Toggle path:',PERSIST,'exists:',PERSIST.exists())
 
 
@@ -296,6 +309,8 @@ def gui():
                          'enabled' if options['shake'] else 'disabled')+'.'
                 if not PLUGIN_DIR.exists():
                     message+=' Shake overlay is not installed; run the updated installer.'
+                elif not overlay_running():
+                    message+=' Shake overlay is not active; restart the Omarchy shell.'
             except Exception as error:
                 message='Unable to apply: '+str(error)
             GLib.idle_add(finish,message)
@@ -304,6 +319,9 @@ def gui():
     def preview_clicked(*_):
         if not PLUGIN_DIR.exists():
             status.set_text('Shake overlay is not installed. Run the updated one-line installer.')
+            return
+        if not overlay_running():
+            status.set_text('Shake overlay is not running. Run: omarchy restart shell — then try Preview again.')
             return
         options=collect()
         options['preview_token']=str(time.time_ns())
