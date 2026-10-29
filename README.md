@@ -12,10 +12,10 @@ Close OptiMouse before updating. Launch **OptiMouse** from the Omarchy applicati
 
 ## Controls
 
-- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor.
-- **Colour picker:** Generates a recoloured XCursor theme. Disable **Follow Omarchy desktop cursor style** to enable the picker.
+- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor. On multi-monitor systems OptiMouse makes a brief pointer hop across an output boundary and back after Apply, to prompt an immediate cursor redraw without leaving the pointer on another screen.
+- **Colour picker:** Always controls the enlarged shake pointer's outline. With **Follow Omarchy desktop cursor style** switched off, it also generates a recoloured XCursor theme for the normal pointer.
 - **Follow Omarchy cursor style:** Attempts to select the currently installed session cursor theme rather than an OptiMouse-generated colour theme. Theme changes made later by other desktop tools are not automatically detected by the GTK app.
-- **Shake to find:** Enable the switch and click Apply. The integrated Quickshell service draws a **temporary, smooth vector pointer overlay** (32–256 px) that grows with shaking, holds briefly, and shrinks. It uses a cursor bridge and no repeated `hyprctl setcursor` calls during animation.
+- **Shake to find:** Enable the switch and click Apply. The integrated Quickshell service draws a **temporary, smooth vector pointer overlay** (32–256 px) that grows with shaking, holds briefly, and shrinks. Its *outline* always follows the selected OptiMouse colour, with a contrast-aware black/white body. It uses a cursor bridge and no repeated `hyprctl setcursor` calls during animation.
 - **Shake sensitivity:** Light, Medium, Hard.
 - **Preview enlarged pointer:** Triggers the overlay's grow/hold/shrink animation independently of shake detection, to help determine whether the service is working.
 - **Apply feedback:** In-window progress and results. No modal success dialogue.
@@ -30,6 +30,8 @@ The installer creates:
 - `~/.config/omarchy/plugins/io.github.robbieuk1.optimouse-shake` (plugin symlink)
 - `~/.local/share/applications/optimouse.desktop` (application menu entry)
 - `~/.config/optimouse/settings.json` (settings; preserved across upgrades)
+
+Note: The multi-monitor refresh uses Hyprland's `movecursor` dispatcher and moves the cursor to the other output and immediately back. On single-monitor systems or when output geometry is ambiguous, this refresh is skipped. Cursors owned by specific applications may still change only when those applications replace their cursor image.
 
 The cursor persistence file is `~/.local/state/omarchy/toggles/hypr/zz-optimouse.lua`, following the approach used by [oxhenri.mouse](https://github.com/Dev-Herni/oxhenri.mouse). It doesn't edit Omarchy's main Hyprland config or Omarchroma's files.
 
