@@ -303,9 +303,15 @@ def gui():
     rgba=Gdk.RGBA();rgba.parse(initial['color'])
     chooser.set_rgba(rgba)
     color_row.pack_start(chooser,False,False,0)
-    color_row.pack_start(label('Custom pointer colour (when theme following is off)'),True,True,0)
+    color_row.pack_start(label('Pointer colour / enlarged pointer outline'),True,True,0)
     normal.pack_start(color_row,False,False,0)
-    def sync_color(*_): chooser.set_sensitive(not follow.get_active())
+    color_hint=label('', 'hint')
+    normal.pack_start(color_hint,False,False,0)
+    def sync_color(*_):
+        color_hint.set_text(
+            'Following Omarchy theme: this colour changes the shake pointer outline only.'
+            if follow.get_active() else
+            'Custom mode: this colour controls the normal pointer and shake outline.')
     follow.connect('toggled',sync_color)
     sync_color()
 
