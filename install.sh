@@ -19,7 +19,8 @@ fi
 
 echo "Downloading OptiMouse and shake overlay…"
 curl -fsSL "$BASE/optimouse.py?install=$CACHE_BUST" -o "$STAGING/optimouse.py"
-python3 -m py_compile "$STAGING/optimouse.py" || { echo "Python syntax check failed; old installation untouched." >&2; exit 1; }
+curl -fsSL "$BASE/cursor_resizer.py?install=$CACHE_BUST" -o "$STAGING/cursor_resizer.py"
+python3 -m py_compile "$STAGING/optimouse.py" "$STAGING/cursor_resizer.py" || { echo "Python syntax check failed; old installation untouched." >&2; exit 1; }
 mkdir -p "$STAGING/plugin"
 for file in manifest.json Service.qml CursorArrow.qml cursor-bridge.py LICENSE; do
   curl -fsSL "$BASE/plugin/$file?install=$CACHE_BUST" -o "$STAGING/plugin/$file"
@@ -37,6 +38,7 @@ if [[ -f "$APP/optimouse.py" ]]; then
   cp -p "$APP/optimouse.py" "$APP/optimouse.py.previous"
 fi
 install -m755 "$STAGING/optimouse.py" "$APP/optimouse.py"
+install -m644 "$STAGING/cursor_resizer.py" "$APP/cursor_resizer.py"
 mkdir -p "$APP/plugin"
 for file in manifest.json Service.qml CursorArrow.qml LICENSE; do
   install -m644 "$STAGING/plugin/$file" "$APP/plugin/$file"
