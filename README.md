@@ -12,7 +12,7 @@ Close OptiMouse before updating. Launch **OptiMouse** from the Omarchy applicati
 
 ## Controls
 
-- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor. On multi-monitor systems OptiMouse makes a brief pointer hop across an output boundary and back after Apply, to prompt an immediate cursor redraw without leaving the pointer on another screen.
+- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor. After Apply, OptiMouse briefly hides and restores the compositor cursor to request an immediate redraw, using the same refresh mechanism as the working Preview function. It does not move the pointer between monitors.
 - **Colour picker:** Always controls the enlarged shake pointer's outline. With **Follow Omarchy desktop cursor style** switched off, it also generates a recoloured XCursor theme for the normal pointer.
 - **Follow Omarchy cursor style:** Attempts to select the currently installed session cursor theme rather than an OptiMouse-generated colour theme. Theme changes made later by other desktop tools are not automatically detected by the GTK app.
 - **Shake to find:** Enable the switch and click Apply. The integrated Quickshell service draws a **temporary, smooth vector pointer overlay** (32–256 px) that grows with shaking, holds briefly, and shrinks. Its *outline* always follows the selected OptiMouse colour, with a contrast-aware black/white body. It uses a cursor bridge and no repeated `hyprctl setcursor` calls during animation.
@@ -31,7 +31,7 @@ The installer creates:
 - `~/.local/share/applications/optimouse.desktop` (application menu entry)
 - `~/.config/optimouse/settings.json` (settings; preserved across upgrades)
 
-Note: The multi-monitor refresh uses Hyprland's `movecursor` dispatcher and moves the cursor to the other output and immediately back. On single-monitor systems or when output geometry is ambiguous, this refresh is skipped. Cursors owned by specific applications may still change only when those applications replace their cursor image.
+Note: The refresh uses Hyprland's `cursor.invisible` setting, briefly switching it on and back off with a guaranteed restore attempt. If Hyprland refuses the visibility commands, use Preview as a manual refresh; some application-owned cursors may still redraw differently.
 
 The cursor persistence file is `~/.local/state/omarchy/toggles/hypr/zz-optimouse.lua`, following the approach used by [oxhenri.mouse](https://github.com/Dev-Herni/oxhenri.mouse). It doesn't edit Omarchy's main Hyprland config or Omarchroma's files.
 
