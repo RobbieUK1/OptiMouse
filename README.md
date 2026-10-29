@@ -1,47 +1,71 @@
-# OptiMouse
+# OptiMouse for Omarchy
 
-Mouse-pointer accessibility settings for **Omarchy / Hyprland**, with a black-and-mint GTK interface.
+OptiMouse is a black-and-mint GTK application for controlling mouse-pointer appearance and shake-to-find on **Omarchy / Hyprland 0.56**.
 
-## One-line installation
-
-Paste this command into your Omarchy terminal:
+## Install or update (single command)
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/RobbieUK1/OptiMouse/main/install.sh)"
 ```
 
-Once installed, open **OptiMouse** from the application menu.
+Close OptiMouse before updating. Launch **OptiMouse** from the Omarchy application menu after installation.
 
-## Features
+## Controls
 
-- Adjust pointer size from 16 to 128 pixels.
-- Choose a custom cursor colour (based on a recoloured installed XCursor theme).
-- Follow the currently active desktop cursor style.
-- Enable shake-to-find, which enlarges the pointer briefly when shaken.
-- Restore default settings.
-- Save cursor settings and enable/disable a user-level systemd helper.
+- **Normal pointer size (16–128 px):** Applies Hyprland's cursor size; the visible dimensions of a normal cursor may still be limited by the installed XCursor/Hyprcursor theme and any application's own cursor.
+- **Colour picker:** Generates a recoloured XCursor theme. Disable **Follow Omarchy desktop cursor style** to enable the picker.
+- **Follow Omarchy cursor style:** Attempts to select the currently installed session cursor theme rather than an OptiMouse-generated colour theme. Theme changes made later by other desktop tools are not automatically detected by the GTK app.
+- **Shake to find:** Enable the switch and click Apply. The integrated Quickshell service draws a **temporary, smooth vector pointer overlay** (32–256 px) that grows with shaking, holds briefly, and shrinks. It uses a cursor bridge and no repeated `hyprctl setcursor` calls during animation.
+- **Shake sensitivity:** Light, Medium, Hard.
+- **Preview enlarged pointer:** Triggers the overlay's grow/hold/shrink animation independently of shake detection, to help determine whether the service is working.
+- **Apply feedback:** In-window progress and results. No modal success dialogue.
 
-## Compatibility and limitations
+**Important:** Normal pointer size and shake overlay maximum size are *different controls*. The overlay provides reliable visual enlargement even where the native cursor theme cannot provide a large raster arrow.
 
-Designed for Arch-based Omarchy with Hyprland and GTK3. The app applies the current theme and size using `hyprctl setcursor`. XCursor recolouring requires an installed Adwaita or another supported cursor set. Some apps may require restarting to display changes.
+## Integration
 
-**Follow theme** reads the cursor style at the time you press Apply; it does not automatically track future theme changes. The shake helper uses `hyprctl cursorpos` and is experimental; behaviour can vary by Hyprland version. Where Omarchy uses a Lua-generated Hyprland configuration instead of a `hyprland.conf`, startup persistence may require additional configuration. The installer does not overwrite Lua configurations.
+The installer creates:
+- `~/.local/share/optimouse/optimouse.py` (GTK app)
+- `~/.local/share/optimouse/plugin/` (Quickshell shake overlay)
+- `~/.config/omarchy/plugins/io.github.robbieuk1.optimouse-shake` (plugin symlink)
+- `~/.local/share/applications/optimouse.desktop` (application menu entry)
+- `~/.config/optimouse/settings.json` (settings; preserved across upgrades)
 
-This is an initial release, not yet tested on a live Omarchy session.
+The cursor persistence file is `~/.local/state/omarchy/toggles/hypr/zz-optimouse.lua`, following the approach used by [oxhenri.mouse](https://github.com/Dev-Herni/oxhenri.mouse). It doesn't edit Omarchy's main Hyprland config or Omarchroma's files.
 
-## Manual launch
+The old `optimouse-shake.service` polling helper is disabled by the installer. The new plugin receives pointer positions over a Hyprland Unix socket and draws the overlay through Quickshell.
+
+If another mouse-settings plugin applies different cursor overrides after OptiMouse, the latest setting may take precedence. Omarchroma chiefly synchronizes application colour schemes and doesn't appear to set cursor size itself.
+
+## Troubleshooting
 
 ```bash
-~/.local/share/optimouse/optimouse.py
+~/.local/share/optimouse/optimouse.py --diagnose
+omarchy plugin list
 ```
 
-## Uninstall
+If Preview does not animate, first check that `io.github.robbieuk1.optimouse-shake` is enabled. Depending on shell version, the Quickshell service may need a shell restart:
 
 ```bash
-systemctl --user disable --now optimouse-shake.service
-rm -f ~/.local/share/applications/optimouse.desktop ~/.config/systemd/user/optimouse-shake.service
-rm -rf ~/.local/share/optimouse ~/.config/optimouse ~/.local/share/icons/OptiMouse-Custom
-systemctl --user daemon-reload
+omarchy restart shell
 ```
 
-If present, remove the OptiMouse source line from `~/.config/hypr/hyprland.conf` and optionally delete `~/.config/hypr/optimouse.conf`.
+## Verification
+
+A GitHub Actions workflow checks Python syntax, installer syntax and plugin manifest/wiring. The overlay and cursor appearance still require a live Omarchy desktop test.
+
+## Credits
+
+The Quickshell overlay files are adapted from [Gabriel Rocha's Omarchy Big Cursor plugin](https://github.com/gabrielforster/omarchy-big-cursor), licensed MIT. The adapted service, bridge and vector cursor retain its MIT licence in `plugin/LICENSE`.
+
+The shake algorithm was also compared with [Big Cursor for Windows](https://github.com/RobbieUK1/big-cursor-windows), which itself ports the original Omarchy behaviour.
+
+The cursor persistence approach was informed by [oxhenri.mouse](https://github.com/Dev-Herni/oxhenri.mouse), MIT licensed.
+
+## Upgrade recovery
+
+Before replacing an existing app, the installer saves a copy as `optimouse.py.previous` when that file exists. If an update fails, restore it with:
+
+```bash
+cp ~/.local/share/optimouse/optimouse.py.previous ~/.local/share/optimouse/optimouse.py
+```
