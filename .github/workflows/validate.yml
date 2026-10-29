@@ -13,7 +13,7 @@ jobs:
         run: python3 -m py_compile optimouse.py plugin/cursor-bridge.py
       - name: Verify application version and standalone timing label
         run: |
-          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.3'
+          python3 optimouse.py --version | grep -x 'OptiMouse 0.2.4'
           python3 - <<'PY'
           from pathlib import Path
           source=Path('optimouse.py').read_text()
@@ -22,6 +22,17 @@ jobs:
           assert "GLib.idle_add(finish,message,time.monotonic()-started,phases)" in source
           assert "breakdown.set_text(" in source
           assert "source_signature(" in source
+          # The previous self-managed Gtk.ColorButton popup could appear in
+          # the screen's top-left on Hyprland. A transient modal dialog must
+          # belong to the settings window and keep Cancel non-destructive.
+          assert "Gtk.ColorButton()" not in source
+          assert "Gtk.ColorChooserDialog(title='Choose pointer colour')" in source
+          assert "dialog.set_transient_for(win)" in source
+          assert "dialog.set_modal(True)" in source
+          assert "dialog.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)" in source
+          assert "if dialog.run()==Gtk.ResponseType.OK:" in source
+          assert "colour_state['rgba']=dialog.get_rgba()" in source
+          assert "colour_state['rgba'].parse(DEFAULT['color'])" in source
           print('Apply timing visibility checks passed.')
           PY
       - name: Check optimized cursor pixels match original algorithm
