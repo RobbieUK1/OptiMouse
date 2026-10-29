@@ -72,7 +72,14 @@ if command -v omarchy-shell >/dev/null; then
   omarchy-shell shell rescanPlugins || echo "Warning: shell plugin rescan failed." >&2
 fi
 if command -v omarchy >/dev/null; then
-  omarchy plugin enable "$PLUGIN_ID" || echo "Warning: shake overlay could not be enabled; the settings app is installed." >&2
+  if omarchy plugin enable "$PLUGIN_ID" --yes; then
+    echo "Shake overlay enabled; restarting Omarchy shell to clear stale QML component cache…"
+    if ! omarchy restart shell; then
+      echo "Warning: Omarchy shell restart failed; run 'omarchy restart shell' manually." >&2
+    fi
+  else
+    echo "Warning: shake overlay could not be enabled. Check 'omarchy plugin list'." >&2
+  fi
 else
   echo "Warning: Omarchy plugin command unavailable; shake overlay needs to be enabled manually." >&2
 fi
