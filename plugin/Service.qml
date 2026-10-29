@@ -27,6 +27,7 @@ Item {
   property string selectedColor: "#71FACC"
   property string lastPreviewToken: ""
   property bool settingsLoaded: false
+  property string lastSettingsPayload: ""
   property int maxSize: 96
   property real sensitivity: 2.5
   property int growMs: 300
@@ -87,13 +88,16 @@ Item {
   }
 
   function applySettings(raw) {
+    var payload = String(raw || "{}")
+    if (payload === root.lastSettingsPayload) return
     var entry
     try {
-      entry = JSON.parse(String(raw || "{}"))
+      entry = JSON.parse(payload)
     } catch (error) {
-      // Keep the current settings while shell.json is mid-edit.
+      // Keep the previous settings if the file is mid-edit.
       return
     }
+    root.lastSettingsPayload = payload
 
     root.baseSize = Math.round(root.numberSetting(entry, "size", root.environmentSize(), 8, 256))
     root.maxSize = Math.round(root.numberSetting(entry, "shake_max", 160, root.baseSize, 256))
