@@ -8,7 +8,7 @@ CONFIG=HOME/'.config/optimouse'
 SETTINGS=CONFIG/'settings.json'
 ICONS=HOME/'.local/share/icons'
 HYPR=HOME/'.config/hypr'
-PERSIST=HOME/'.local/state/omarchy/toggles/hypr/optimouse.lua'
+PERSIST=HOME/'.local/state/omarchy/toggles/hypr/zz-optimouse.lua'
 PLUGIN_ID='io.github.robbieuk1.optimouse-shake'
 PLUGIN_DIR=HOME/'.config/omarchy/plugins'/PLUGIN_ID
 DEFAULT={'size':32,'color':'#71FACC','follow_theme':True,'shake':False,'shake_scale':2.2,'shake_max':160,'sensitivity':2.5}
@@ -99,13 +99,26 @@ def is_generated(name):
     return name.startswith('OptiMouse-')
 
 def desktop_theme():
-    # The session environment retains the original theme after gsettings
-    # is changed by OptiMouse. Prefer this over OptiMouse's own custom theme.
+    # Environment variables are normally inherited from the login session,
+    # and are more useful for theme-following than GTK's last custom theme.
+    def available(value):
+        if not value or is_generated(value) or not re.fullmatch(r'[A-Za-z0-9._+-]{1,128}',value):
+            return False
+        for root in (HOME/'.local/share/icons',HOME/'.icons',Path('/usr/share/icons')):
+            if (root/value/'cursors').is_dir() or (root/value/'hyprcursors').is_dir():
+                return True
+        return False
     for key in ('HYPRCURSOR_THEME','XCURSOR_THEME'):
         value=os.environ.get(key,'')
-        if value and not is_generated(value):
-            return value
-    return 'Adwaita'
+        if available(value): return value
+    if shutil.which('gsettings'):
+        result=run(['gsettings','get','org.gnome.desktop.interface','cursor-theme'])
+        value=result.stdout.strip().strip("'\"")
+        if available(value): return value
+    for value in ('Adwaita','default','Bibata-Modern-Classic'):
+        if available(value): return value
+    raise RuntimeError('No usable theme cursor was found to follow')
+
 
 def persist_cursor(theme,size,follow):
     PERSIST.parent.mkdir(parents=True,exist_ok=True)
