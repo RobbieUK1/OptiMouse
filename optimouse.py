@@ -367,6 +367,7 @@ def gui():
             if dialog.run()==Gtk.ResponseType.OK:
                 colour_state['rgba']=dialog.get_rgba()
                 swatch.queue_draw()
+                queue_colour_preload()
         finally:
             dialog.destroy()
 
