@@ -34,6 +34,8 @@ jobs:
           assert '.enabled == true' in installer
           assert "cursorStroke = root.selectedColor" in service
           assert "root.cursorStroke = parts[2]" not in service
+          assert "interval: 100" in service
+          assert "interval: 500" not in service
           from importlib.util import module_from_spec, spec_from_file_location
           spec=spec_from_file_location("optimouse",Path("optimouse.py"))
           app=module_from_spec(spec)
@@ -53,7 +55,10 @@ jobs:
               for m in common_mocks(): stack.enter_context(m)
               stack.enter_context(patch.object(app,"overlay_running",return_value=True))
               save=stack.enter_context(patch.object(app,"write_settings"))
+              checked=stack.enter_context(patch.object(app,"checked"))
               result=app.apply(opts)
+              assert checked.call_args_list[0].args[0]==["hyprctl","setcursor","OptiMouse-71FACC","48"]
+              assert sum(1 for c in checked.call_args_list if c.args[0][0]=="hyprctl")==1
               assert result==("OptiMouse-71FACC",True)
               saved=save.call_args.args[0]
               assert saved["preview_token"]=="123456789000000"
